@@ -93,7 +93,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
     const key = sessionStorage.getItem("folio-autodemo");
     if (key === tool.id) {
       sessionStorage.removeItem("folio-autodemo");
-      void useSample(true);
+      void loadSample(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool.id]);
@@ -188,7 +188,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
     setError(null);
   }
 
-  async function useSample(runAfter = false) {
+  async function loadSample(runAfter = false) {
     try {
       const bundle = await samplesForTool(tool.id);
       const next: JobFile[] = [];
@@ -331,7 +331,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                     <Button
                       variant="secondary"
                       className="h-12 px-8 text-base font-bold"
-                      onClick={() => void useSample(false)}
+                      onClick={() => void loadSample(false)}
                     >
                       Try with a sample
                     </Button>
@@ -366,7 +366,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                           Add more
                         </Button>
                       )}
-                      <Button variant="secondary" size="sm" onClick={() => void useSample()}>
+                      <Button variant="secondary" size="sm" onClick={() => void loadSample()}>
                         Use sample
                       </Button>
                     </div>
@@ -1192,7 +1192,7 @@ function ResultPreview({ file }: { file: JobResultFile }) {
   return null;
 }
 
-function defaultsFor(id: string): JobOptions {
+function defaultsFor(_id: string): JobOptions {
   return {
     splitMode: "extract",
     ranges: "1-3",

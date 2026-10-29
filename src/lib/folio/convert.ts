@@ -16,7 +16,6 @@ import {
   docxFromHtml,
   htmlToMd,
   htmlToPdfBytes,
-  htmlToText,
   mdToHtml,
   pptxFromSlides,
   sheetsFromXlsx,
