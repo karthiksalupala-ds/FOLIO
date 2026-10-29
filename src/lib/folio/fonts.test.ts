@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { drawRuns, setFontLoader } from "./fonts.ts";
 import { chunkText, splitRuns, toWinAnsi } from "./text-utils.ts";
@@ -50,5 +50,9 @@ test("drawRuns embeds Telugu glyphs into a real PDF", async () => {
   const page = doc.addPage([400, 200]);
   const w = await drawRuns(doc, page, "Hello నమస్తే भारत", { x: 20, y: 100, size: 20, color: rgb(0, 0, 0), helv });
   assert.ok(w > 50);
-  await writeFile("/tmp/t/telugu.pdf", await doc.save());
+  const bytes = await doc.save({ useObjectStreams: false }); // plain objects so font names are greppable
+  // The Telugu/Devanagari fonts must really be embedded (not just Helvetica).
+  const raw = Buffer.from(bytes).toString("latin1");
+  assert.ok(raw.includes("NotoSansTelugu"), "Telugu font embedded");
+  assert.ok(raw.includes("NotoSansDevanagari"), "Devanagari font embedded");
 });
