@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { isBlockedHostname, isPrivateAddress } from "./ssrf.ts";
 
 const MAX_IN = 12_000;
 const MAX_HTML = 400_000;
@@ -60,7 +61,7 @@ export const translateText = createServerFn({ method: "POST" })
     const res = await chat(
       `Translate the document into ${data.lang}. Keep paragraph breaks. Return only the translation, no preface.`,
       data.text,
-      1800,
+      6000,
     );
     if (res.ok) return res;
     return {
@@ -69,28 +70,55 @@ export const translateText = createServerFn({ method: "POST" })
     };
   });
 
+const MAX_REDIRECTS = 5;
+
+/** Throws unless the URL points at a public http(s) host (blocks localhost, private ranges, cloud metadata). */
+async function assertPublicUrl(url: URL) {
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only http and https URLs are allowed");
+  if (url.username || url.password) throw new Error("URLs with credentials are not allowed");
+  if (url.port && !["80", "443"].includes(url.port)) throw new Error("Only standard web ports are allowed");
+  const host = url.hostname;
+  if (isBlockedHostname(host)) throw new Error("That address is not allowed");
+  const isLiteral = /^[0-9.]+$/.test(host) || host.includes(":");
+  if (!isLiteral) {
+    const { lookup } = await import("node:dns/promises");
+    const addrs = await lookup(host, { all: true });
+    if (!addrs.length || addrs.some((a) => isPrivateAddress(a.address))) throw new Error("That address is not allowed");
+  }
+}
+
 export const fetchHtmlPage = createServerFn({ method: "POST" })
   .validator((input: { url: string }) => input)
   .handler(async ({ data }) => {
-    let url = data.url.trim();
-    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    let raw = data.url.trim();
+    if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+    let current: URL;
     try {
-      const parsed = new URL(url);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        return { ok: false as const, error: "Only http and https URLs are allowed" };
-      }
+      current = new URL(raw);
     } catch {
       return { ok: false as const, error: "Enter a valid URL" };
     }
     try {
-      const res = await fetch(url, {
-        redirect: "follow",
-        headers: { "User-Agent": "FolioPDF/1.0" },
-      });
-      if (!res.ok) return { ok: false as const, error: `Could not fetch page (${res.status})` };
-      const html = (await res.text()).slice(0, MAX_HTML);
-      return { ok: true as const, html, url };
-    } catch {
-      return { ok: false as const, error: "Could not reach that page" };
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        await assertPublicUrl(current);
+        const res = await fetch(current, {
+          redirect: "manual", // follow redirects ourselves so every hop is re-checked
+          headers: { "User-Agent": "FolioPDF/1.0" },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.status >= 300 && res.status < 400) {
+          const loc = res.headers.get("location");
+          if (!loc) return { ok: false as const, error: "Bad redirect from that page" };
+          current = new URL(loc, current);
+          continue;
+        }
+        if (!res.ok) return { ok: false as const, error: `Could not fetch page (${res.status})` };
+        const html = (await res.text()).slice(0, MAX_HTML);
+        return { ok: true as const, html, url: current.toString() };
+      }
+      return { ok: false as const, error: "Too many redirects" };
+    } catch (e) {
+      const msg = e instanceof Error && /not allowed|Only http|credentials|ports/.test(e.message) ? e.message : "Could not reach that page";
+      return { ok: false as const, error: msg };
     }
   });

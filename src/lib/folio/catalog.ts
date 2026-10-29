@@ -176,7 +176,7 @@ export const TOOLS: PdfTool[] = [
     maxFiles: 8,
     multiple: true,
     cta: "Compress PDF",
-    hint: "Recommended keeps quality. Extreme makes the smallest file.",
+    hint: "Picks the smallest result. Higher compression re-renders pages as images, so text may no longer be selectable.",
     done: "PDF has been compressed!",
   },
   {
@@ -497,7 +497,7 @@ export const TOOLS: PdfTool[] = [
   {
     id: "redact-pdf",
     title: "Redact PDF",
-    blurb: "Permanently black out matching text so it cannot be copied.",
+    blurb: "Permanently remove matching text. Pages are flattened to images so it cannot be copied.",
     category: "security",
     icon: "redact",
     tint: "slate",
@@ -581,7 +581,7 @@ export const TOOLS: PdfTool[] = [
     maxFiles: 2,
     multiple: false,
     cta: "Extract text",
-    hint: "Reads the text layer. Scanned-only files will be flagged.",
+    hint: "Text PDFs are exported as-is. Scanned PDFs are read with OCR (English) in your browser; the first run downloads the OCR engine.",
     done: "Searchable PDF is ready!",
   },
   {

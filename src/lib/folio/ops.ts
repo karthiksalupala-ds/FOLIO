@@ -23,6 +23,8 @@ import {
   escapeHtml,
 } from "./office";
 import { fetchHtmlPage, summarizeText, translateText } from "./ai";
+import { drawRuns } from "./fonts";
+import { chunkText } from "./text-utils";
 
 export type JobFile = {
   id: string;
@@ -244,10 +246,24 @@ async function compressOp(files: JobFile[], options: JobOptions, onProgress: Pro
   const out: JobResultFile[] = [];
   for (let f = 0; f < files.length; f++) {
     onProgress((f / files.length) * 90, `Compressing ${files[f].name}`);
-    const bytes = await rasterizeToPdf(await ensurePdf(files[f]), scale, q, (p, label) => {
+    const original = await ensurePdf(files[f]);
+    // Candidate 1: lossless rewrite (keeps text selectable).
+    let lossless: Uint8Array | null = null;
+    try {
+      const doc = await PDFDocument.load(original, { ignoreEncryption: true });
+      lossless = await doc.save({ useObjectStreams: true });
+    } catch {
+      lossless = null;
+    }
+    // Candidate 2: re-render every page as a JPEG (smallest, but flattens text).
+    const raster = await rasterizeToPdf(original, scale, q, (p, label) => {
       onProgress((f / files.length) * 90 + p * 0.9 * (1 / files.length), label);
     });
-    out.push(pdfResult(`${stemOf(files[f].name)}-compressed.pdf`, bytes));
+    // Never hand back a file that is bigger than the input.
+    const candidates: Uint8Array[] = [new Uint8Array(original), raster];
+    if (lossless) candidates.push(lossless);
+    const best = candidates.reduce((a, b) => (b.byteLength < a.byteLength ? b : a));
+    out.push(pdfResult(`${stemOf(files[f].name)}-compressed.pdf`, best));
   }
   return out;
 }
@@ -514,14 +530,14 @@ async function watermarkOp(files: JobFile[], options: JobOptions, onProgress: Pr
     const font = await pdf.embedFont(StandardFonts.HelveticaBold);
     for (const page of pdf.getPages()) {
       const { width, height } = page.getSize();
-      page.drawText(winAnsi(text), {
+      await drawRuns(pdf, page, text, {
         x: width * 0.16,
         y: height * 0.42,
         size: Math.min(48, width / (text.length * 0.5)),
-        font,
+        helv: font,
         color: rgb(0.55, 0.55, 0.56),
         opacity,
-        rotate: degrees(32),
+        rotateDeg: 32,
       });
     }
     out.push(pdfResult(`${stemOf(files[i].name)}-watermark.pdf`, await pdf.save()));
@@ -576,7 +592,7 @@ async function cropOp(file: JobFile, options: JobOptions, onProgress: ProgressFn
 async function redactOp(file: JobFile, options: JobOptions, onProgress: ProgressFn): Promise<JobResultFile[]> {
   const query = (options.redactQuery || "").trim();
   if (!query) throw new Error("Enter the text you want to permanently remove");
-  onProgress(15, "Finding matches");
+  onProgress(10, "Finding matches");
   const srcBytes = await ensurePdf(file);
   const pdf = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
   const js = await openPdfJs(srcBytes);
@@ -590,30 +606,36 @@ async function redactOp(file: JobFile, options: JobOptions, onProgress: Progress
     if (!libPage) continue;
     const { width, height } = libPage.getSize();
     for (const it of items) {
-      if (!it.str.toLowerCase().includes(needle) && needle.length > 2 && !needle.includes(it.str.toLowerCase())) {
-        continue;
+      const hay = it.str.toLowerCase();
+      let from = 0;
+      for (let idx = hay.indexOf(needle, from); idx !== -1; idx = hay.indexOf(needle, from)) {
+        from = idx + needle.length;
+        hits += 1;
+        // Box only the matched part of this text run.
+        const x0 = it.nx + (it.nw * idx) / hay.length;
+        const w = (it.nw * needle.length) / hay.length;
+        const pad = 1.5;
+        libPage.drawRectangle({
+          x: x0 * width - pad,
+          y: height - (it.ny + it.nh) * height - pad,
+          width: Math.max(w * width, 4) + pad * 2,
+          height: Math.max(it.nh * height, 6) + pad * 2,
+          color: rgb(0, 0, 0),
+        });
       }
-      if (!it.str.toLowerCase().includes(needle) && it.str.trim().length > 0) {
-        if (!it.str.toLowerCase().includes(needle)) continue;
-      }
-      if (!it.str.toLowerCase().includes(needle)) continue;
-      hits += 1;
-      libPage.drawRectangle({
-        x: it.nx * width,
-        y: height - (it.ny + it.nh) * height,
-        width: Math.max(it.nw * width, 8),
-        height: Math.max(it.nh * height, 8),
-        color: rgb(0, 0, 0),
-      });
     }
-    onProgress(15 + (70 * i) / js.numPages, `Page ${i}`);
+    onProgress(10 + (50 * i) / js.numPages, `Page ${i}`);
   }
   await js.cleanup();
-  if (!hits) throw new Error(`No matches for “${query}”`);
-  onProgress(92, `Redacted ${hits} matches`);
-  return [pdfResult(`${stemOf(file.name)}-redacted.pdf`, await pdf.save())];
+  if (!hits) throw new Error(`No matches for \u201c${query}\u201d`);
+  // Drawing a black box leaves the original text underneath (still selectable / extractable).
+  // Flatten every page to an image so the redacted words are really gone.
+  onProgress(62, "Flattening pages so the text is removed");
+  const marked = await pdf.save();
+  const flat = await rasterizeToPdf(asArrayBuffer(marked), 2, 0.9, (p, label) => onProgress(62 + p * 0.3, label));
+  onProgress(95, `Redacted ${hits} match${hits === 1 ? "" : "es"}`);
+  return [pdfResult(`${stemOf(file.name)}-redacted.pdf`, flat)];
 }
-
 async function signOp(file: JobFile, options: JobOptions, onProgress: ProgressFn): Promise<JobResultFile[]> {
   if (!options.signDataUrl) throw new Error("Draw or type a signature first");
   onProgress(20, "Placing signature");
@@ -723,34 +745,123 @@ async function compareOp(files: JobFile[], onProgress: ProgressFn): Promise<JobR
 }
 
 async function ocrOp(file: JobFile, onProgress: ProgressFn): Promise<JobResultFile[]> {
-  onProgress(20, "Reading text layer");
-  const text = await extractPdfText(file.bytes, onProgress);
-  if (text.replace(/\s/g, "").length < 12) {
-    throw new Error("No selectable text found. This looks like a scan — convert to JPG or open it in Edit PDF.");
+  onProgress(10, "Reading text layer");
+  const text = await extractPdfText(file.bytes, (p, l) => onProgress(p * 0.3, l));
+  if (text.replace(/\s/g, "").length >= 12) {
+    // Already has a text layer: export the text and a clean, searchable rebuild.
+    const html = text
+      .split(/\n{2,}/)
+      .map((p) => `<p>${escapeHtml(p)}</p>`)
+      .join("");
+    const pdfBytes = await htmlToPdfBytes(`<h1>${escapeHtml(stemOf(file.name))}</h1>${html}`);
+    return [
+      {
+        name: `${stemOf(file.name)}.txt`,
+        blob: new Blob([text], { type: "text/plain" }),
+        previewText: text.slice(0, 1600),
+      },
+      pdfResult(`${stemOf(file.name)}-searchable.pdf`, pdfBytes),
+    ];
   }
-  const html = text
-    .split(/\n{2,}/)
-    .map((p) => `<p>${escapeHtml(p)}</p>`)
-    .join("");
-  const pdfBytes = await htmlToPdfBytes(`<h1>${escapeHtml(stemOf(file.name))}</h1>${html}`);
+  return scannedOcr(file, onProgress);
+}
+
+type OcrWord = { text: string; x0: number; y0: number; x1: number; y1: number };
+
+/** Scanned PDF: render each page, run Tesseract (English), keep the page image and add an invisible text layer. */
+async function scannedOcr(file: JobFile, onProgress: ProgressFn): Promise<JobResultFile[]> {
+  onProgress(30, "Loading OCR engine");
+  const { createWorker } = await import("tesseract.js");
+  const worker = await createWorker("eng");
+  const js = await openPdfJs(file.bytes);
+  const scale = 2;
+  const out = await PDFDocument.create();
+  const font = await out.embedFont(StandardFonts.Helvetica);
+  const pageTexts: string[] = [];
+  try {
+    for (let i = 1; i <= js.numPages; i++) {
+      onProgress(30 + ((i - 1) / js.numPages) * 65, `Recognising page ${i} of ${js.numPages}`);
+      const page = await js.getPage(i);
+      const canvas = document.createElement("canvas");
+      await renderPageToCanvas(page, canvas, scale, 0);
+      const { data } = await worker.recognize(canvas, {}, { blocks: true });
+      const jpg = await canvasToJpeg(canvas, 0.85);
+      const img = await out.embedJpg(new Uint8Array(await jpg.arrayBuffer()));
+      const pw = canvas.width / scale;
+      const ph = canvas.height / scale;
+      const outPage = out.addPage([pw, ph]);
+      outPage.drawImage(img, { x: 0, y: 0, width: pw, height: ph });
+      const words: OcrWord[] = [];
+      for (const block of data.blocks ?? [])
+        for (const para of block.paragraphs)
+          for (const line of para.lines)
+            for (const w of line.words)
+              words.push({ text: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 });
+      for (const w of words) {
+        const t = w.text.replace(/[^\x20-\x7e]/g, "");
+        if (!t.trim()) continue;
+        const h = Math.max((w.y1 - w.y0) / scale, 4);
+        outPage.drawText(t, {
+          x: w.x0 / scale,
+          y: ph - w.y1 / scale,
+          size: h * 0.85,
+          font,
+          opacity: 0, // invisible text layer: selectable and searchable, image stays on top
+        });
+      }
+      pageTexts.push(data.text ?? words.map((w) => w.text).join(" "));
+    }
+  } finally {
+    await worker.terminate();
+    await js.cleanup();
+  }
+  const all = pageTexts.join("\n\n").trim();
+  if (all.replace(/\s/g, "").length < 4) throw new Error("OCR could not find readable text in this scan.");
+  onProgress(97, "Saving");
   return [
     {
       name: `${stemOf(file.name)}.txt`,
-      blob: new Blob([text], { type: "text/plain" }),
-      previewText: text.slice(0, 1600),
+      blob: new Blob([all], { type: "text/plain" }),
+      previewText: all.slice(0, 1600),
     },
-    pdfResult(`${stemOf(file.name)}-searchable.pdf`, pdfBytes),
+    pdfResult(`${stemOf(file.name)}-ocr.pdf`, await out.save()),
   ];
 }
+
+/** Summarise text of any length: map-reduce over chunks so nothing is silently cut off. */
+async function summarizeLong(text: string, title: string, onProgress: ProgressFn): Promise<string> {
+  let current = text;
+  for (let round = 0; round < 3; round++) {
+    const chunks = chunkText(current, 9000);
+    if (chunks.length <= 1) {
+      const res = await summarizeText({ data: { text: chunks[0] ?? current, title } });
+      if (!res.ok) throw new Error(res.error);
+      return res.text;
+    }
+    if (chunks.length > MAX_AI_CHUNKS) throw new Error("This document is too long to summarise in one go. Split it first.");
+    const partials: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      onProgress(35 + (i / chunks.length) * 50, `Summarising part ${i + 1} of ${chunks.length}`);
+      const res = await summarizeText({ data: { text: chunks[i], title: `${title} (part ${i + 1})` } });
+      if (!res.ok) throw new Error(res.error);
+      partials.push(res.text);
+    }
+    current = partials.join("\n\n");
+  }
+  const res = await summarizeText({ data: { text: current.slice(0, 11000), title } });
+  if (!res.ok) throw new Error(res.error);
+  return res.text;
+}
+
+const MAX_AI_CHUNKS = 30;
 
 async function summarizeOp(file: JobFile, onProgress: ProgressFn): Promise<JobResultFile[]> {
   onProgress(20, "Extracting text");
   const text = await extractPdfText(file.bytes, onProgress);
   if (text.replace(/\s/g, "").length < 40) throw new Error("Not enough text in this PDF to summarize.");
-  onProgress(55, "Writing summary");
-  const res = await summarizeText({ data: { text, title: file.name } });
-  if (!res.ok) throw new Error(res.error);
-  const html = `<h1>Summary · ${escapeHtml(stemOf(file.name))}</h1>${res.text
+  onProgress(35, "Writing summary");
+  const summary = await summarizeLong(text, file.name, onProgress);
+  const html = `<h1>Summary · ${escapeHtml(stemOf(file.name))}</h1>${summary
     .split("\n")
     .map((line) => {
       if (line.startsWith("- ")) return `<li>${escapeHtml(line.slice(2))}</li>`;
@@ -762,7 +873,7 @@ async function summarizeOp(file: JobFile, onProgress: ProgressFn): Promise<JobRe
     {
       name: `${stemOf(file.name)}-summary.pdf`,
       blob: new Blob([asArrayBuffer(bytes)] as BlobPart[], { type: "application/pdf" }),
-      previewText: res.text,
+      previewText: summary,
     },
   ];
 }
@@ -772,9 +883,16 @@ async function translateOp(file: JobFile, options: JobOptions, onProgress: Progr
   onProgress(20, "Extracting text");
   const text = await extractPdfText(file.bytes, onProgress);
   if (text.replace(/\s/g, "").length < 20) throw new Error("Not enough text in this PDF to translate.");
-  onProgress(55, `Translating to ${lang}`);
-  const res = await translateText({ data: { text, lang } });
-  if (!res.ok) throw new Error(res.error);
+  const chunks = chunkText(text, 3500);
+  if (chunks.length > MAX_AI_CHUNKS) throw new Error("This document is too long to translate in one go. Split it first.");
+  const translated: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress(30 + (i / chunks.length) * 60, `Translating to ${lang} (${i + 1}/${chunks.length})`);
+    const part = await translateText({ data: { text: chunks[i], lang } });
+    if (!part.ok) throw new Error(part.error);
+    translated.push(part.text);
+  }
+  const res = { text: translated.join("\n\n") };
   const html = `<h1>${escapeHtml(stemOf(file.name))} · ${escapeHtml(lang)}</h1>${res.text
     .split(/\n{2,}/)
     .map((p) => `<p>${escapeHtml(p)}</p>`)
@@ -1012,21 +1130,6 @@ function guessMime(name: string) {
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
-}
-
-function winAnsi(s: string): string {
-  return s.replace(/[^\x00-\x7E]/g, (ch) => {
-    const map: Record<string, string> = {
-      "’": "'",
-      "‘": "'",
-      "“": '"',
-      "”": '"',
-      "–": "-",
-      "—": "-",
-      "…": "...",
-    };
-    return map[ch] ?? "?";
-  });
 }
 
 function stripChrome(html: string) {
