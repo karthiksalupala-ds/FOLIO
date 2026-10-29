@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Folio",
+      "hasCanvas": false,
+      "bodyTextLen": 3943,
+      "bodyTextHash": "b04823bc7aa001d8306564f9c3e1a887fed9d5491e9706c51ece1d8bd2453de8",
+      "bodyTextPrefix": "FolioPDF All PDF tools Files stay on this device Every tool you ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Folio",
+      "hasCanvas": false,
+      "bodyTextLen": 3917,
+      "bodyTextHash": "bd03dc37e6004f184ce882ed5867f24cda762bcf6f17362eb140f44bfb14c820",
+      "bodyTextPrefix": "FolioPDF All PDF tools Every tool you need to work with PDFs, at",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}
