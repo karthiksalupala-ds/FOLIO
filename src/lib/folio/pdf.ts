@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, degrees, LineCapStyle, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 import type { Annot, FolioDoc, PageMeta, Point } from "./types";
 import { uid, asArrayBuffer } from "@/lib/utils";
+import { drawRuns } from "./fonts";
 
 export type PdfJs = typeof import("pdfjs-dist");
 export type PdfDocProxy = import("pdfjs-dist").PDFDocumentProxy;
@@ -341,21 +342,16 @@ async function drawAnnot(
       const font = a.type === "text" && a.bold ? fonts.helvBold : fonts.helv;
       const size = a.fontSize;
       const lines = a.text.split("\n");
-      lines.forEach((line, i) => {
-        const x = a.x * pw + 2;
-        const y = ph - a.y * ph - size * (i + 0.9);
-        try {
-          page.drawText(winAnsi(line), {
-            x,
-            y,
-            size,
-            font,
-            color: hexToRgb(a.color),
-          });
-        } catch {
-          page.drawText(winAnsi(line), { x, y, size, font: fonts.helv, color: hexToRgb(a.color) });
-        }
-      });
+      const color = hexToRgb(a.color);
+      for (let i = 0; i < lines.length; i++) {
+        await drawRuns(pdf, page, lines[i], {
+          x: a.x * pw + 2,
+          y: ph - a.y * ph - size * (i + 0.9),
+          size,
+          color,
+          helv: font,
+        });
+      }
       break;
     }
     case "image":
@@ -391,33 +387,16 @@ async function drawAnnot(
     case "note": {
       const r = nToPdf(page, a.x, a.y, 0.18, 0.08);
       page.drawRectangle({ ...r, color: rgb(0.95, 0.84, 0.42) });
-      page.drawText(winAnsi(a.text.slice(0, 80)), {
+      await drawRuns(pdf, page, a.text.slice(0, 80), {
         x: r.x + 4,
         y: r.y + r.height - 14,
         size: 8,
-        font: fonts.helv,
         color: rgb(0.15, 0.12, 0.1),
-        maxWidth: r.width - 8,
+        helv: fonts.helv,
       });
       break;
     }
   }
-}
-
-function winAnsi(s: string): string {
-  return s.replace(/[^\x00-\x7E]/g, (ch) => {
-    const map: Record<string, string> = {
-      "’": "'",
-      "‘": "'",
-      "“": '"',
-      "”": '"',
-      "–": "-",
-      "—": "-",
-      "…": "...",
-      "•": "*",
-    };
-    return map[ch] ?? "?";
-  });
 }
 
 export async function mergePdfs(buffers: ArrayBuffer[]): Promise<Uint8Array> {
@@ -448,13 +427,7 @@ export async function blankPdf(title = "Untitled"): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([612, 792]);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
-  page.drawText(winAnsi(title), {
-    x: 56,
-    y: 730,
-    size: 18,
-    font,
-    color: rgb(0.12, 0.11, 0.1),
-  });
+  await drawRuns(pdf, page, title, { x: 56, y: 730, size: 18, color: rgb(0.12, 0.11, 0.1), helv: font });
   return pdf.save();
 }
 
