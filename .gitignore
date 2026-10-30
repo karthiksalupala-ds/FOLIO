@@ -6,3 +6,6 @@ node_modules/
 .DS_Store
 dist/
 .output/
+
+# Vercel builds from source; a committed prebuilt output loses its node_modules (gitignored) and 500s
+.vercel
