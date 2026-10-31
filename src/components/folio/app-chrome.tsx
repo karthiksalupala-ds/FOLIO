@@ -64,7 +64,7 @@ export function SiteHeader() {
           </DropdownMenuContent>
         </DropdownMenu>
         <p className="ml-auto hidden text-sm font-semibold text-muted md:block">
-          Files stay on this device
+          Runs in your browser
         </p>
       </div>
     </header>
