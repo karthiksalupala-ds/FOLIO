@@ -3,7 +3,7 @@
 
 @theme {
   --font-sans: "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
 
   --color-bg: #ffffff;
@@ -371,5 +371,54 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* Landing page: fonts for the live editing demo (loaded only when those scripts appear) */
+@font-face {
+  font-family: "Folio Telugu";
+  src: url("/fonts/telugu.ttf") format("truetype");
+  unicode-range: U+0C00-0C7F;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Folio Devanagari";
+  src: url("/fonts/devanagari.ttf") format("truetype");
+  unicode-range: U+0900-097F;
+  font-display: swap;
+}
+
+.demo-line {
+  border-radius: 2px;
+  outline: 2px solid transparent;
+  outline-offset: 3px;
+  cursor: text;
+  transition: outline-color 120ms ease;
+}
+.demo-line:hover {
+  outline-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+.demo-line:focus-visible {
+  outline-color: var(--color-accent);
+}
+
+.faq-item > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.faq-item > summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item[open] .faq-chevron {
+  transform: rotate(180deg);
+}
+.faq-chevron {
+  transition: transform 160ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .faq-chevron,
+  .demo-line {
+    transition: none;
   }
 }
