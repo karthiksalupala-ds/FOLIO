@@ -72,60 +72,29 @@ export function HomeStudio() {
   return (
     <AppShell>
       <section id="start" className="scroll-mt-16 bg-surface">
-        <div className="mx-auto w-full max-w-6xl px-4 pt-12 pb-10 text-center md:px-8 md:pt-20 md:pb-16">
-          <h1 className="font-display mx-auto max-w-4xl text-[clamp(2.3rem,7vw,4.6rem)] leading-[1.02] font-extrabold tracking-[-0.04em] text-balance">
-            Edit a PDF the way you edit a document
+        <div className="mx-auto w-full max-w-6xl px-4 py-10 text-center md:px-8 md:py-16">
+          <h1 className="mx-auto max-w-3xl text-[clamp(1.9rem,5.4vw,3.15rem)] font-extrabold leading-[1.12] tracking-[-0.035em]">
+            Every tool you need to work with PDFs, at your fingertips
           </h1>
-          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted md:text-lg">
-            Click a line, retype it, and the font, colour and background stay as they were. {total} tools to merge,
-            split, convert, sign and protect, all in your browser.
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted md:text-lg">
+            Upload a PDF and pick what to do — edit the text, merge, split, compress, convert, sign or protect. It all
+            runs in your browser.
           </p>
           <UploadHub />
-          <p className="mt-5 text-sm text-subtle">No account. No watermark. Files up to 40 MB.</p>
+          <label className="relative mx-auto mt-8 block max-w-xl text-left">
+            <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-subtle" />
+            <input
+              className="search-field"
+              placeholder={`Search ${total} tools — merge, Word, compress, sign…`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search PDF tools"
+            />
+          </label>
         </div>
       </section>
 
-      <section className="bg-footer text-footer-fg">
-        <div className="mx-auto grid w-full max-w-6xl items-center gap-10 px-4 py-14 md:grid-cols-[1fr_auto] md:gap-16 md:px-8 md:py-20">
-          <div className="max-w-md">
-            <h2 className="font-display text-[clamp(1.8rem,4.4vw,2.9rem)] leading-[1.05] font-extrabold tracking-[-0.03em] text-balance">
-              Retype a line. Keep the look.
-            </h2>
-            <p className="mt-4 leading-relaxed text-footer-muted">
-              Open any text PDF in the editor and click the words you want to change. The new text is set in the
-              same kind of font, in the same ink, on the same background, so the page doesn&rsquo;t look patched.
-            </p>
-            <p className="mt-4 leading-relaxed text-footer-muted">
-              Try it on the page. It works the same way on yours.
-            </p>
-            <a
-              href="#start"
-              className="mt-7 inline-flex h-12 items-center rounded-md bg-accent px-6 font-bold text-accent-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-footer"
-            >
-              Open a PDF
-            </a>
-          </div>
-          <div className="flex justify-center md:justify-end">
-            <EditDemo />
-          </div>
-        </div>
-      </section>
-
-      <section id="tools" className="mx-auto w-full max-w-6xl scroll-mt-16 px-4 pt-14 md:px-8 md:pt-20">
-        <h2 className="font-display text-[clamp(1.7rem,4vw,2.6rem)] font-extrabold tracking-[-0.03em]">
-          All {total} tools
-        </h2>
-        <label className="relative mt-5 block max-w-xl text-left">
-          <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-subtle" />
-          <input
-            className="search-field"
-            placeholder={`Search ${total} tools: merge, Word, compress, sign`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search PDF tools"
-          />
-        </label>
-
+      <section id="tools" className="mx-auto w-full max-w-6xl scroll-mt-16 px-4 md:px-8">
         {!searching && (
           <div className="mt-5 flex gap-1 overflow-x-auto border-b border-border">
             {CATEGORIES.map((c) => (
@@ -156,6 +125,33 @@ export function HomeStudio() {
           ) : (
             list.map((t) => <ToolCard key={t.id} tool={t} />)
           )}
+        </div>
+      </section>
+
+
+      <section className="mt-16 bg-footer text-footer-fg md:mt-24">
+        <div className="mx-auto grid w-full max-w-6xl items-center gap-10 px-4 py-14 md:grid-cols-[1fr_auto] md:gap-16 md:px-8 md:py-20">
+          <div className="max-w-md">
+            <h2 className="font-display text-[clamp(1.8rem,4.4vw,2.9rem)] leading-[1.05] font-extrabold tracking-[-0.03em] text-balance">
+              Retype a line. Keep the look.
+            </h2>
+            <p className="mt-4 leading-relaxed text-footer-muted">
+              Open any text PDF in the editor and click the words you want to change. The new text is set in the
+              same kind of font, in the same ink, on the same background, so the page doesn&rsquo;t look patched.
+            </p>
+            <p className="mt-4 leading-relaxed text-footer-muted">
+              Try it on the page. It works the same way on yours.
+            </p>
+            <a
+              href="#start"
+              className="mt-7 inline-flex h-12 items-center rounded-md bg-accent px-6 font-bold text-accent-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-footer"
+            >
+              Open a PDF
+            </a>
+          </div>
+          <div className="flex justify-center md:justify-end">
+            <EditDemo />
+          </div>
         </div>
       </section>
 
