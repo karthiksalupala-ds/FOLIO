@@ -131,6 +131,11 @@ export type Annot =
       text: string;
       fontSize: number;
       color: string;
+      /** Background colour sampled from the page under the original line. */
+      bg?: string;
+      font?: "sans" | "serif" | "mono";
+      bold?: boolean;
+      italic?: boolean;
     });
 
 export type PageMeta = {

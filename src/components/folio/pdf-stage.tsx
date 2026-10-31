@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { analyzeColors, type FontLook } from "@/lib/folio/text-style";
 import { uid } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useFolio } from "@/lib/folio/store";
@@ -348,6 +349,7 @@ export function PdfStage({
                 line={line}
                 text={repl && repl.type === "replace" ? repl.text : line.text}
                 replaced={!!repl}
+                look={repl && repl.type === "replace" ? repl : undefined}
                 editable={tool === "text"}
                 onCommit={(next) => {
                   if (repl && repl.type === "replace") {
@@ -355,6 +357,7 @@ export function PdfStage({
                     return;
                   }
                   if (next === line.text) return;
+                  const colors = sampleLine(canvasRef.current, line);
                   addAnnot({
                     id: uid("a"),
                     page: pageIndex,
@@ -365,7 +368,11 @@ export function PdfStage({
                     h: line.nh,
                     text: next,
                     fontSize: Math.max(8, line.fontSize / zoom),
-                    color: "#1c1917",
+                    color: colors?.fg ?? "#1c1917",
+                    bg: colors?.bg ?? "#ffffff",
+                    font: line.look?.font,
+                    bold: line.look?.bold,
+                    italic: line.look?.italic,
                   });
                 }}
               />
@@ -570,9 +577,7 @@ function AnnotShape({ a, selected }: { a: Annot; selected: boolean }) {
     );
   }
   if (a.type === "replace") {
-    return (
-      <rect x={a.x} y={a.y} width={a.w} height={a.h} fill="#f3eee4" />
-    );
+    return <rect x={a.x} y={a.y} width={a.w} height={a.h} fill={a.bg ?? "#ffffff"} />;
   }
   return null;
 }
@@ -589,7 +594,32 @@ type TextLine = {
   ny: number;
   nw: number;
   nh: number;
+  look?: FontLook;
 };
+
+const CSS_FONTS = {
+  sans: 'Helvetica, Arial, "Nimbus Sans", sans-serif',
+  serif: '"Times New Roman", Times, "Nimbus Roman", serif',
+  mono: '"Courier New", Courier, monospace',
+} as const;
+
+/** Read the background and ink colour under a text line from the rendered page canvas. */
+function sampleLine(canvas: HTMLCanvasElement | null, line: TextLine) {
+  try {
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx || !canvas.clientWidth) return null;
+    const k = canvas.width / canvas.clientWidth;
+    const x = Math.max(0, Math.floor(line.left * k));
+    const y = Math.max(0, Math.floor(line.top * k));
+    const w = Math.min(canvas.width - x, Math.max(2, Math.ceil(line.width * k)));
+    const h = Math.min(canvas.height - y, Math.max(2, Math.ceil(line.height * k)));
+    if (w < 2 || h < 2) return null;
+    const img = ctx.getImageData(x, y, w, h);
+    return analyzeColors(img.data, w, h);
+  } catch {
+    return null; // tainted or unavailable canvas: fall back to defaults
+  }
+}
 
 function groupLines(items: TextItem[]): TextLine[] {
   if (!items.length) return [];
@@ -620,6 +650,7 @@ function groupLines(items: TextItem[]): TextLine[] {
       height: Math.max(it.height, it.fontSize, 10),
       fontSize: it.fontSize || 12,
       text: it.str,
+      look: it.look,
       right: it.left + Math.max(it.width, 8),
       nx: 0,
       ny: 0,
@@ -635,6 +666,7 @@ function groupLines(items: TextItem[]): TextLine[] {
     height: l.height,
     fontSize: l.fontSize,
     text: l.text,
+    look: l.look,
     nx: l.left / vw,
     ny: l.top / vh,
     nw: l.width / vw,
@@ -653,12 +685,14 @@ function LineEdit({
   line,
   text,
   replaced,
+  look,
   editable,
   onCommit,
 }: {
   line: TextLine;
   text: string;
   replaced: boolean;
+  look?: { color: string; bg?: string; font?: "sans" | "serif" | "mono"; bold?: boolean; italic?: boolean };
   editable: boolean;
   onCommit: (next: string) => void;
 }) {
@@ -685,6 +719,15 @@ function LineEdit({
         fontSize: line.fontSize,
         width: Math.max(line.width, 12),
         minHeight: line.height,
+        ...(look
+          ? {
+              color: look.color,
+              background: look.bg ?? "#fff",
+              fontFamily: CSS_FONTS[look.font ?? "sans"],
+              fontWeight: look.bold ? 700 : 400,
+              fontStyle: look.italic ? "italic" : "normal",
+            }
+          : {}),
       }}
       onPointerDown={(e) => {
         if (editable) e.stopPropagation();

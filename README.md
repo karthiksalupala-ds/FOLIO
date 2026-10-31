@@ -44,17 +44,17 @@ Open any document and work directly on the page.
 | Tool | Shortcut | What it does |
 | --- | :---: | --- |
 | Select | `V` | Move, resize and delete objects |
-| Text | `T` | Add text, or rewrite a line on the page |
-| Highlight | `H` | Highlight, underline and strike through |
+| Text | `T` | Click any line of existing text and retype it. The new text keeps the original font style (sans, serif, mono, bold, italic), ink colour and background |
+| Highlight, Underline, Strike | `H` | Mark up text |
 | Pen | `P` | Freehand drawing |
-| Shapes | | Rectangles and boxes |
+| Shapes | | Rectangle, ellipse, line, arrow |
 | Image | | Place pictures and logos |
 | Sign | | Draw or type a signature |
 | Stamp | | Approved, Draft, Confidential and more |
 | Note | | Sticky notes |
 | Redact | | Mark text for permanent removal |
 
-Full **undo / redo** history is built in.
+Also built in: **find in page**, page tools (rotate, duplicate, insert blank, delete, reorder), and full **undo / redo** history.
 
 ## Built for real documents
 
@@ -123,16 +123,14 @@ scripts/              Build and platform scripts
 
 Planned work to bring the editing experience closer to desktop PDF editors:
 
-- [ ] Click-to-edit existing text in place, with font matching
+- [ ] Paragraph-level text editing with reflow (today editing is line by line)
+- [ ] Exact font matching with embedded fonts (today the closest standard font is used)
 - [ ] Edit, move, replace and delete existing images
-- [ ] Page management inside the editor (reorder, insert, delete, extract)
-- [ ] Shapes: ellipse, line, arrow, polygon
-- [ ] Comments and review mode
 - [ ] Find and replace across the document
+- [ ] Comments and review mode
 - [ ] Interactive form fields: checkbox, radio, dropdown, signature field
 - [ ] Hyperlinks and bookmarks
 - [ ] More OCR languages (Telugu, Hindi)
-- [ ] Batch processing with progress and zip export
 
 ## Contributing
 

@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb, degrees, LineCapStyle, type PDFFont, t
 import type { Annot, FolioDoc, PageMeta, Point } from "./types";
 import { uid, asArrayBuffer } from "@/lib/utils";
 import { drawRuns } from "./fonts";
+import { fontStyleFrom, type FontLook } from "./text-style";
 
 export type PdfJs = typeof import("pdfjs-dist");
 export type PdfDocProxy = import("pdfjs-dist").PDFDocumentProxy;
@@ -47,6 +48,8 @@ export type TextItem = {
   ny: number;
   nw: number;
   nh: number;
+  /** Font family / weight / slant of the original text, when it can be worked out. */
+  look?: FontLook;
 };
 
 export async function extractPageText(
@@ -58,6 +61,24 @@ export async function extractPageText(
   const pdfjs = await loadPdfjs();
   const content = await page.getTextContent();
   const items: TextItem[] = [];
+  const looks = new Map<string, FontLook>();
+  const lookFor = (fontName: string | undefined): FontLook | undefined => {
+    if (!fontName) return undefined;
+    let l = looks.get(fontName);
+    if (!l) {
+      let real: string | undefined;
+      try {
+        // After the page is rendered pdf.js knows the real font name (e.g. "ABCDEF+Arial-BoldMT").
+        if (page.commonObjs.has(fontName)) real = (page.commonObjs.get(fontName) as { name?: string } | null)?.name;
+      } catch {
+        real = undefined;
+      }
+      const css = (content.styles as Record<string, { fontFamily?: string } | undefined>)[fontName]?.fontFamily;
+      l = fontStyleFrom(real ?? fontName, css);
+      looks.set(fontName, l);
+    }
+    return l;
+  };
   for (const raw of content.items) {
     if (!("str" in raw) || !raw.str) continue;
     const it = raw as {
@@ -65,6 +86,7 @@ export async function extractPageText(
       transform: number[];
       width: number;
       height: number;
+      fontName?: string;
     };
     const tx = pdfjs.Util.transform(viewportTransform, it.transform) as number[];
     const fontSize = Math.hypot(tx[2] ?? 0, tx[3] ?? 0) || 12;
@@ -84,6 +106,7 @@ export async function extractPageText(
       ny: top / viewportHeight,
       nw: width / viewportWidth,
       nh: height / viewportHeight,
+      look: lookFor(it.fontName),
     });
   }
   return items;
@@ -251,6 +274,24 @@ export async function bakePdf(doc: FolioDoc): Promise<Uint8Array> {
   return pdf.save({ useObjectStreams: true });
 }
 
+const stdCache = new WeakMap<PDFDocument, Map<string, Promise<PDFFont>>>();
+
+/** Standard PDF fonts closest to the original text style (sans = Helvetica, serif = Times, mono = Courier). */
+function standardFont(pdf: PDFDocument, family: "sans" | "serif" | "mono", bold: boolean, italic: boolean): Promise<PDFFont> {
+  const F = StandardFonts;
+  const table = {
+    sans: [F.Helvetica, F.HelveticaBold, F.HelveticaOblique, F.HelveticaBoldOblique],
+    serif: [F.TimesRoman, F.TimesRomanBold, F.TimesRomanItalic, F.TimesRomanBoldItalic],
+    mono: [F.Courier, F.CourierBold, F.CourierOblique, F.CourierBoldOblique],
+  }[family];
+  const name = table[(bold ? 1 : 0) + (italic ? 2 : 0)];
+  let m = stdCache.get(pdf);
+  if (!m) stdCache.set(pdf, (m = new Map()));
+  let p = m.get(name);
+  if (!p) m.set(name, (p = pdf.embedFont(name)));
+  return p;
+}
+
 async function drawAnnot(
   pdf: PDFDocument,
   page: PDFPage,
@@ -337,16 +378,29 @@ async function drawAnnot(
     case "replace": {
       if (a.type === "replace") {
         const r = nToPdf(page, a.x, a.y, a.w, a.h);
-        page.drawRectangle({ ...r, color: rgb(1, 1, 1) });
+        // Cover descenders (g, y, p) that hang below the line box, plus a hair of side padding.
+        const drop = a.fontSize * 0.16;
+        page.drawRectangle({
+          x: r.x - 1,
+          y: r.y - drop,
+          width: r.width + 2,
+          height: r.height + drop,
+          color: hexToRgb(a.bg ?? "#ffffff"),
+        });
       }
-      const font = a.type === "text" && a.bold ? fonts.helvBold : fonts.helv;
+      const font =
+        a.type === "replace"
+          ? await standardFont(pdf, a.font ?? "sans", !!a.bold, !!a.italic)
+          : a.type === "text" && a.bold
+            ? fonts.helvBold
+            : fonts.helv;
       const size = a.fontSize;
       const lines = a.text.split("\n");
       const color = hexToRgb(a.color);
       for (let i = 0; i < lines.length; i++) {
         await drawRuns(pdf, page, lines[i], {
           x: a.x * pw + 2,
-          y: ph - a.y * ph - size * (i + 0.9),
+          y: ph - a.y * ph - size * (i + (a.type === "replace" ? 1 : 0.9)),
           size,
           color,
           helv: font,
