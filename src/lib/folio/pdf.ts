@@ -400,7 +400,9 @@ async function drawAnnot(
       for (let i = 0; i < lines.length; i++) {
         await drawRuns(pdf, page, lines[i], {
           x: a.x * pw + 2,
-          y: ph - a.y * ph - size * (i + (a.type === "replace" ? 1 : 0.9)),
+          // For "replace" the stored box starts 0.15 x fontSize above the line top (see groupLines),
+          // so the original baseline sits 1.15 x fontSize below a.y.
+          y: ph - a.y * ph - size * (i + (a.type === "replace" ? 1.15 : 0.9)),
           size,
           color,
           helv: font,
