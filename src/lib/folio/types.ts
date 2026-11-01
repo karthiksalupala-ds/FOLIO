@@ -28,6 +28,7 @@ export type ExportFormat =
 export type Tool =
   | "select"
   | "text"
+  | "textbox"
   | "highlight"
   | "underline"
   | "strike"

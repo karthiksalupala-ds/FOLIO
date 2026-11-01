@@ -1,24 +1,42 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
+  Bold,
   ChevronLeft,
   ChevronRight,
+  Circle,
+  Copy,
   Download,
+  EllipsisVertical,
+  EyeOff,
   Highlighter,
   ImagePlus,
+  Italic,
   Minus,
   MousePointer2,
+  MoveUpRight,
   PanelLeft,
+  PanelRight,
   PenTool,
   Plus,
   Redo2,
+  RotateCw,
   Search,
   Share2,
   Square,
   Stamp,
   StickyNote,
+  Strikethrough,
+  TextCursorInput,
+  Trash2,
   Type,
+  Underline,
   Undo2,
   ZoomIn,
   ZoomOut,
@@ -44,6 +62,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FolioWordmark } from "@/components/folio/mark";
 import { PdfStage, PDF_TOOLS } from "@/components/folio/pdf-stage";
+import { PageThumb } from "@/components/folio/page-thumb";
 import {
   MarkdownEditor,
   RichDocEditor,
@@ -56,27 +75,57 @@ import { SignatureDialog } from "@/components/folio/signature-dialog";
 import { useFolio } from "@/lib/folio/store";
 import { convertDoc } from "@/lib/folio/convert";
 import { downloadBlob, cn, asArrayBuffer } from "@/lib/utils";
-import { INK_COLORS, MARK_COLORS, STAMPS, type Tool } from "@/lib/folio/types";
+import { INK_COLORS, MARK_COLORS, STAMPS, type Annot, type Tool } from "@/lib/folio/types";
+import { uid } from "@/lib/utils";
 import { defaultPages, mergePdfs } from "@/lib/folio/pdf";
 import { PDFDocument } from "pdf-lib";
 
 const ICONS: Record<Tool, typeof MousePointer2> = {
   select: MousePointer2,
   text: Type,
+  textbox: TextCursorInput,
   highlight: Highlighter,
-  underline: Highlighter,
-  strike: Highlighter,
+  underline: Underline,
+  strike: Strikethrough,
   pen: PenTool,
   rect: Square,
-  ellipse: Square,
+  ellipse: Circle,
   line: Minus,
-  arrow: Minus,
+  arrow: MoveUpRight,
   image: ImagePlus,
   sign: PenTool,
   stamp: Stamp,
   note: StickyNote,
-  redact: Square,
+  redact: EyeOff,
 };
+
+const LABELS: Record<Tool, string> = {
+  select: "Select",
+  text: "Edit text",
+  textbox: "Add text",
+  highlight: "Highlight",
+  underline: "Underline",
+  strike: "Strike through",
+  pen: "Draw",
+  rect: "Rectangle",
+  ellipse: "Ellipse",
+  line: "Line",
+  arrow: "Arrow",
+  image: "Image",
+  sign: "Sign",
+  stamp: "Stamp",
+  note: "Comment",
+  redact: "Redact",
+};
+
+/** Tools in the order people reach for them, grouped like a desktop PDF editor. */
+const TOOL_GROUPS: Tool[][] = [
+  ["select", "text", "textbox"],
+  ["highlight", "underline", "strike", "pen"],
+  ["rect", "ellipse", "line", "arrow"],
+  ["image", "sign", "stamp", "note"],
+  ["redact"],
+];
 
 export function EditorShell({ docId }: { docId: string }) {
   const navigate = useNavigate();
@@ -137,6 +186,7 @@ export function EditorShell({ docId }: { docId: string }) {
       if (["INPUT", "TEXTAREA"].includes(tag) || (e.target as HTMLElement).isContentEditable) return;
       if (e.key === "v") st.setTool("select");
       if (e.key === "t") st.setTool("text");
+      if (e.key === "a") st.setTool("textbox");
       if (e.key === "h") st.setTool("highlight");
       if (e.key === "p") st.setTool("pen");
     }
@@ -196,12 +246,18 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
   const [signOpen, setSignOpen] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [pagesOpen, setPagesOpen] = useState(false);
-  const [propsOpen, setPropsOpen] = useState(false);
+  const [propsOpen, setPropsOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1024);
   const [find, setFind] = useState("");
   const imageRef = useRef<HTMLInputElement>(null);
   const mergeRef = useRef<HTMLInputElement>(null);
 
   const paginated = doc.kind === "pdf" || doc.kind === "image";
+
+  function pick(t: Tool) {
+    if (t === "image") imageRef.current?.click();
+    else if (t === "sign") setSignOpen(true);
+    setTool(t);
+  }
 
   async function downloadPdf() {
     try {
@@ -214,7 +270,7 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-bg pb-20 text-fg md:pb-0">
+    <div className="flex h-dvh flex-col bg-bg text-fg">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2 md:px-3">
         <Button size="icon" variant="ghost" onClick={onHome} aria-label="All tools">
           <ArrowLeft />
@@ -276,8 +332,9 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
               variant={propsOpen ? "secondary" : "ghost"}
               className="hidden md:inline-flex"
               onClick={() => setPropsOpen((v) => !v)}
+              aria-pressed={propsOpen}
             >
-              Options
+              <PanelRight /> Panel
             </Button>
           )}
           <Button size="sm" onClick={() => void downloadPdf()}>
@@ -288,54 +345,39 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
 
       <div className="flex min-h-0 flex-1">
         {paginated && (
-          <nav className="hidden w-12 shrink-0 flex-col items-center gap-1 border-r border-border py-2 md:flex">
-            {PDF_TOOLS.filter((t) =>
-              ["select", "text", "highlight", "pen", "rect", "image", "sign", "stamp", "note", "redact"].includes(
-                t.id,
-              ),
-            ).map((t) => {
-              const Icon = ICONS[t.id];
-              return (
-                <Tooltip key={t.id}>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="tool"
-                      variant={tool === t.id ? "default" : "ghost"}
-                      aria-label={t.label}
-                      onClick={() => {
-                        if (t.id === "image") imageRef.current?.click();
-                        else if (t.id === "sign") setSignOpen(true);
-                        setTool(t.id);
-                      }}
-                    >
-                      <Icon />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">{t.label}</TooltipContent>
-                </Tooltip>
-              );
-            })}
-            <Separator className="my-1 w-6" />
-            <div className="flex flex-col gap-1.5">
-              {MARK_COLORS.slice(0, 5).map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  aria-label={c.label}
-                  onClick={() => setColor(c.value)}
-                  className={cn(
-                    "size-4 rounded-full",
-                    color === c.value && "ring-2 ring-accent ring-offset-1 ring-offset-bg",
-                  )}
-                  style={{ background: c.value }}
-                />
-              ))}
-            </div>
+          <nav
+            aria-label="Editing tools"
+            className="hidden w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border py-2 md:flex"
+          >
+            {TOOL_GROUPS.map((group, gi) => (
+              <div key={gi} className="flex flex-col items-center gap-1">
+                {gi > 0 && <Separator className="my-1 w-7" />}
+                {group.map((t) => {
+                  const Icon = ICONS[t];
+                  return (
+                    <Tooltip key={t}>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="tool"
+                          variant={tool === t ? "default" : "ghost"}
+                          aria-label={LABELS[t]}
+                          aria-pressed={tool === t}
+                          onClick={() => pick(t)}
+                        >
+                          <Icon />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">{LABELS[t]}</TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         )}
 
         {paginated && (
-          <aside className="hidden w-[140px] shrink-0 border-r border-border md:block">
+          <aside className="hidden w-[168px] shrink-0 border-r border-border md:block">
             <PageRail />
           </aside>
         )}
@@ -361,8 +403,10 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
         </main>
 
         {paginated && propsOpen && (
-          <aside className="hidden w-56 shrink-0 border-l border-border p-3 md:block">
-            <p className="mb-3 text-[11px] font-medium tracking-wide text-muted uppercase">Page</p>
+          <aside className="hidden w-64 shrink-0 overflow-y-auto border-l border-border p-3 md:block">
+            <Inspector />
+            <Separator className="my-4" />
+            <p className="mb-3 text-xs font-semibold text-muted">Page</p>
             <div className="space-y-3 text-sm">
               <label className="flex items-center justify-between text-muted">
                 Page numbers
@@ -429,59 +473,42 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <p className="text-[11px] text-subtle">Ink width</p>
-              <Slider
-                min={1}
-                max={8}
-                step={0.5}
-                value={[strokeWidth]}
-                onValueChange={(v) => setStroke(v[0] ?? 2)}
-              />
-              <div className="flex flex-wrap gap-1">
-                {INK_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className="size-5 rounded-full"
-                    style={{ background: c }}
-                    onClick={() => setColor(c)}
-                    aria-label={c}
-                  />
-                ))}
-              </div>
             </div>
           </aside>
         )}
       </div>
 
       {paginated && (
-        <div className="fixed inset-x-0 bottom-16 z-20 flex items-center gap-1 overflow-x-auto border-t border-border bg-surface p-2 md:hidden">
-          <Button size="icon" variant="ghost" onClick={() => setPagesOpen(true)} aria-label="Pages">
-            <PanelLeft />
-          </Button>
-          {(["select", "text", "highlight", "pen", "rect", "image", "sign", "stamp", "note", "redact"] as Tool[]).map(
-            (t) => {
-              const Icon = ICONS[t];
-              return (
-                <Button
-                  key={t}
-                  size="icon"
-                  variant={tool === t ? "default" : "ghost"}
-                  onClick={() => {
-                    if (t === "image") imageRef.current?.click();
-                    else if (t === "sign") setSignOpen(true);
-                    setTool(t);
-                  }}
-                  aria-label={t}
-                >
-                  <Icon />
-                </Button>
-              );
-            },
-          )}
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setConvertOpen(true)}>
-            Convert
-          </Button>
+        <div className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
+          <SelectionBar />
+          <div className="flex items-center gap-1 overflow-x-auto p-2">
+            <Button size="icon" variant="ghost" className="size-11 shrink-0" onClick={() => setPagesOpen(true)} aria-label="Pages">
+              <PanelLeft className="size-5" />
+            </Button>
+            {TOOL_GROUPS.map((group, gi) => (
+              <div key={gi} className="flex shrink-0 items-center gap-1 border-l border-border pl-1">
+                {group.map((t) => {
+                  const Icon = ICONS[t];
+                  return (
+                    <Button
+                      key={t}
+                      size="icon"
+                      variant={tool === t ? "default" : "ghost"}
+                      className="size-11 shrink-0"
+                      onClick={() => pick(t)}
+                      aria-label={LABELS[t]}
+                      aria-pressed={tool === t}
+                    >
+                      <Icon className="size-5" />
+                    </Button>
+                  );
+                })}
+              </div>
+            ))}
+            <Button size="sm" variant="ghost" className="ml-2 h-11 shrink-0" onClick={() => setConvertOpen(true)}>
+              Convert
+            </Button>
+          </div>
         </div>
       )}
 
@@ -548,6 +575,251 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
   );
 }
 
+const SWATCHES = Array.from(new Set([...INK_COLORS, ...MARK_COLORS.map((c) => c.value), "#d93025", "#1a73e8", "#188038"]));
+
+type AnyPatch = Partial<Annot>;
+
+function selectedAnnot() {
+  const st = useFolio.getState();
+  return st.current?.annotations.find((x) => x.id === st.selectedId);
+}
+
+function duplicateSelected() {
+  const a = selectedAnnot();
+  if (!a) return;
+  const st = useFolio.getState();
+  const copy = JSON.parse(JSON.stringify(a)) as Annot;
+  copy.id = uid("a");
+  if ("x" in copy) copy.x = Math.min(0.9, copy.x + 0.025);
+  if ("y" in copy) copy.y = Math.min(0.95, copy.y + 0.02);
+  st.addAnnot(copy);
+  st.select(copy.id);
+}
+
+/** Look-and-feel controls for whatever is selected, or the defaults for the active tool. */
+function Inspector() {
+  const doc = useFolio((s) => s.current)!;
+  const selectedId = useFolio((s) => s.selectedId);
+  const tool = useFolio((s) => s.tool);
+  const color = useFolio((s) => s.color);
+  const setColor = useFolio((s) => s.setColor);
+  const fontSize = useFolio((s) => s.fontSize);
+  const setFontSize = useFolio((s) => s.setFontSize);
+  const strokeWidth = useFolio((s) => s.strokeWidth);
+  const setStroke = useFolio((s) => s.setStroke);
+  const updateAnnot = useFolio((s) => s.updateAnnot);
+  const removeAnnot = useFolio((s) => s.removeAnnot);
+
+  const a = doc.annotations.find((x) => x.id === selectedId);
+  const type = a?.type;
+  const isText = type === "text" || type === "replace";
+  const strokeTypes = ["pen", "rect", "ellipse", "line", "arrow"];
+  const hasStroke = a ? strokeTypes.includes(a.type) : strokeTypes.includes(tool);
+  const showSize = a ? isText : tool === "textbox";
+  const showColor = a ? "color" in a : !["select", "text", "image", "sign", "stamp", "note", "redact"].includes(tool);
+  const curColor = a && "color" in a ? a.color : color;
+  const curSize = a && (a.type === "text" || a.type === "replace") ? a.fontSize : fontSize;
+  const curStroke = a && a.type === "pen" ? a.strokeWidth : a && "strokeWidth" in a ? (a.strokeWidth ?? strokeWidth) : strokeWidth;
+
+  const patch = (p: AnyPatch) => a && updateAnnot(a.id, p);
+
+  if (!a && !showSize && !showColor && !hasStroke) {
+    return (
+      <div>
+        <p className="mb-2 text-xs font-semibold text-muted">Properties</p>
+        <p className="text-xs leading-relaxed text-subtle">
+          Select an object on the page to change its colour, size and style. Pick a tool to set its defaults.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs font-semibold text-muted">{a ? LABELS_BY_TYPE[a.type] ?? "Selection" : `${LABELS[tool]} defaults`}</p>
+
+      {showColor && (
+        <div>
+          <p className="mb-1.5 text-[11px] text-subtle">Colour</p>
+          <div className="flex flex-wrap gap-1.5">
+            {SWATCHES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-label={`Colour ${c}`}
+                aria-pressed={curColor.toLowerCase() === c.toLowerCase()}
+                onClick={() => (a ? patch({ color: c } as AnyPatch) : setColor(c))}
+                className={cn(
+                  "size-6 rounded-full outline-none ring-offset-1 ring-offset-bg focus-visible:ring-2 focus-visible:ring-accent",
+                  curColor.toLowerCase() === c.toLowerCase() && "ring-2 ring-accent",
+                )}
+                style={{ background: c, boxShadow: "inset 0 0 0 1px rgb(0 0 0 / 0.12)" }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showSize && (
+        <div>
+          <div className="mb-1.5 flex items-center justify-between text-[11px] text-subtle">
+            <span>Size</span>
+            <span className="tabular-nums">{Math.round(curSize)} pt</span>
+          </div>
+          <Slider
+            min={6}
+            max={96}
+            step={1}
+            value={[curSize]}
+            onValueChange={(v) => {
+              const n = v[0] ?? 16;
+              if (a) patch({ fontSize: n } as AnyPatch);
+              else setFontSize(n);
+            }}
+          />
+        </div>
+      )}
+
+      {a && isText && (
+        <div className="flex items-center gap-1">
+          <Button
+            size="icon"
+            variant={"bold" in a && a.bold ? "default" : "secondary"}
+            aria-label="Bold"
+            aria-pressed={"bold" in a && !!a.bold}
+            onClick={() => patch({ bold: !("bold" in a && a.bold) } as AnyPatch)}
+          >
+            <Bold />
+          </Button>
+          <Button
+            size="icon"
+            variant={"italic" in a && a.italic ? "default" : "secondary"}
+            aria-label="Italic"
+            aria-pressed={"italic" in a && !!a.italic}
+            onClick={() => patch({ italic: !("italic" in a && a.italic) } as AnyPatch)}
+          >
+            <Italic />
+          </Button>
+          {a.type === "text" &&
+            (["left", "center", "right"] as const).map((al) => {
+              const Icon = al === "left" ? AlignLeft : al === "center" ? AlignCenter : AlignRight;
+              return (
+                <Button
+                  key={al}
+                  size="icon"
+                  variant={(a.align ?? "left") === al ? "default" : "secondary"}
+                  aria-label={`Align ${al}`}
+                  onClick={() => patch({ align: al } as AnyPatch)}
+                >
+                  <Icon />
+                </Button>
+              );
+            })}
+        </div>
+      )}
+
+      {hasStroke && (
+        <div>
+          <div className="mb-1.5 flex items-center justify-between text-[11px] text-subtle">
+            <span>Line width</span>
+            <span className="tabular-nums">{curStroke}</span>
+          </div>
+          <Slider
+            min={1}
+            max={8}
+            step={0.5}
+            value={[curStroke]}
+            onValueChange={(v) => {
+              const n = v[0] ?? 2;
+              if (a) patch({ strokeWidth: n } as AnyPatch);
+              else setStroke(n);
+            }}
+          />
+        </div>
+      )}
+
+      {a && (type === "rect" || type === "ellipse") && (
+        <label className="flex items-center justify-between text-sm text-muted">
+          Fill
+          <input type="checkbox" checked={!!a.fill} onChange={(e) => patch({ fill: e.target.checked } as AnyPatch)} />
+        </label>
+      )}
+
+      {a && (
+        <div className="flex gap-2 pt-1">
+          <Button size="sm" variant="secondary" className="flex-1" onClick={duplicateSelected}>
+            <Copy /> Duplicate
+          </Button>
+          <Button size="sm" variant="secondary" className="flex-1" onClick={() => removeAnnot(a.id)}>
+            <Trash2 /> Delete
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const LABELS_BY_TYPE: Record<string, string> = {
+  text: "Text box",
+  replace: "Edited text",
+  highlight: "Highlight",
+  underline: "Underline",
+  strike: "Strike through",
+  pen: "Drawing",
+  rect: "Rectangle",
+  ellipse: "Ellipse",
+  line: "Line",
+  arrow: "Arrow",
+  image: "Image",
+  sign: "Signature",
+  stamp: "Stamp",
+  note: "Comment",
+  redact: "Redaction",
+};
+
+/** Phone version of the Inspector: a slim strip above the tool bar while something is selected. */
+function SelectionBar() {
+  const selectedId = useFolio((s) => s.selectedId);
+  const doc = useFolio((s) => s.current)!;
+  const updateAnnot = useFolio((s) => s.updateAnnot);
+  const removeAnnot = useFolio((s) => s.removeAnnot);
+  const a = doc.annotations.find((x) => x.id === selectedId);
+  if (!a) return null;
+  const hasColor = "color" in a;
+  const isText = a.type === "text" || a.type === "replace";
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto border-b border-border px-2 py-1.5">
+      {hasColor &&
+        SWATCHES.slice(0, 9).map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Colour ${c}`}
+            onClick={() => updateAnnot(a.id, { color: c } as AnyPatch)}
+            className={cn("size-8 shrink-0 rounded-full", a.color.toLowerCase() === c.toLowerCase() && "ring-2 ring-accent ring-offset-1")}
+            style={{ background: c, boxShadow: "inset 0 0 0 1px rgb(0 0 0 / 0.12)" }}
+          />
+        ))}
+      {isText && (
+        <>
+          <Button size="icon" variant="secondary" className="size-9 shrink-0" aria-label="Smaller text" onClick={() => updateAnnot(a.id, { fontSize: Math.max(6, a.fontSize - 2) } as AnyPatch)}>
+            <Minus />
+          </Button>
+          <Button size="icon" variant="secondary" className="size-9 shrink-0" aria-label="Larger text" onClick={() => updateAnnot(a.id, { fontSize: Math.min(96, a.fontSize + 2) } as AnyPatch)}>
+            <Plus />
+          </Button>
+        </>
+      )}
+      <Button size="icon" variant="secondary" className="ml-auto size-9 shrink-0" aria-label="Duplicate" onClick={duplicateSelected}>
+        <Copy />
+      </Button>
+      <Button size="icon" variant="secondary" className="size-9 shrink-0" aria-label="Delete" onClick={() => removeAnnot(a.id)}>
+        <Trash2 />
+      </Button>
+    </div>
+  );
+}
+
 function PageRail() {
   const doc = useFolio((s) => s.current)!;
   const pageIndex = useFolio((s) => s.pageIndex);
@@ -556,40 +828,86 @@ function PageRail() {
   const deletePage = useFolio((s) => s.deletePage);
   const duplicatePage = useFolio((s) => s.duplicatePage);
   const insertBlankPage = useFolio((s) => s.insertBlankPage);
+  const movePage = useFolio((s) => s.movePage);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+  const last = doc.pages.length - 1;
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-2 p-3">
+      <div className="flex flex-col gap-3 p-3">
         {doc.pages.map((p, i) => (
-          <button
+          <div
             key={p.id}
-            type="button"
-            onClick={() => setPage(i)}
-            className={cn(
-              "rounded-md px-2 py-3 text-left text-xs shadow-[0_0_0_1px_var(--color-border)]",
-              i === pageIndex ? "bg-accent text-accent-fg" : "bg-raised text-muted hover:text-fg",
-            )}
+            draggable
+            onDragStart={() => setDragFrom(i)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(i);
+            }}
+            onDragEnd={() => {
+              setDragFrom(null);
+              setDragOver(null);
+            }}
+            onDrop={() => {
+              if (dragFrom !== null && dragFrom !== i) movePage(dragFrom, i);
+              setDragFrom(null);
+              setDragOver(null);
+            }}
+            className={cn("group relative rounded-md", dragOver === i && dragFrom !== i && "outline-2 outline-accent")}
           >
-            <div className="font-medium">Page {i + 1}</div>
-            <div className="opacity-70">{p.rotation}°</div>
-          </button>
+            <button
+              type="button"
+              onClick={() => setPage(i)}
+              aria-label={`Go to page ${i + 1}`}
+              aria-current={i === pageIndex ? "page" : undefined}
+              className={cn(
+                "block w-full rounded-md p-1.5 text-center outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                i === pageIndex ? "bg-accent/12 ring-2 ring-accent" : "hover:bg-raised",
+              )}
+            >
+              <PageThumb page={p} bytes={doc.bytes} />
+              <span className={cn("mt-1.5 block text-xs tabular-nums", i === pageIndex ? "font-bold text-fg" : "text-muted")}>{i + 1}</span>
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  aria-label={`Page ${i + 1} options`}
+                  className="absolute top-2.5 right-2.5 size-7 opacity-0 shadow-sm group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 max-md:opacity-100"
+                >
+                  <EllipsisVertical className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem disabled={i === 0} onClick={() => movePage(i, i - 1)}>
+                  <ArrowUp /> Move up
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={i === last} onClick={() => movePage(i, i + 1)}>
+                  <ArrowDown /> Move down
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => rotatePage(i)}>
+                  <RotateCw /> Rotate 90°
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => duplicatePage(i)}>
+                  <Copy /> Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void insertBlankPage(i)}>
+                  <Plus /> Insert blank after
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={doc.pages.length < 2} onClick={() => deletePage(i)}>
+                  <Trash2 /> Delete page
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         ))}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="ghost">
-              <Plus className="size-3.5" /> Page
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => void insertBlankPage(pageIndex)}>
-              Insert blank
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => duplicatePage(pageIndex)}>Duplicate</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => rotatePage(pageIndex)}>Rotate 90°</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => deletePage(pageIndex)}>Delete page</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button size="sm" variant="ghost" onClick={() => void insertBlankPage(pageIndex)}>
+          <Plus className="size-3.5" /> Add page
+        </Button>
       </div>
     </ScrollArea>
   );

@@ -32,6 +32,8 @@ export function PdfStage({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<null | { x: number; y: number; w: number; h: number }>(null);
   const [ink, setInk] = useState<Point[] | null>(null);
+  const tap = useRef<{ x: number; y: number; cx: number; cy: number; t: number } | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
   const drag = useRef<{
     mode: "draw" | "move";
     sx: number;
@@ -147,21 +149,10 @@ export function PdfStage({
       }
       return;
     }
-    if (tool === "text") {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest?.(".text-layer-item")) return;
-      addAnnot({
-        id: uid("a"),
-        page: pageIndex,
-        type: "text",
-        x: p.x,
-        y: p.y,
-        w: 0.32,
-        h: 0.05,
-        text: "New text",
-        color: "#1c1917",
-        fontSize: fontSize,
-      });
+    if (tool === "text") return; // editing happens by clicking an existing line; blank taps do nothing
+    if (tool === "textbox") {
+      // Place on release, and only for a real tap: touching the page to scroll must not drop a box.
+      tap.current = { x: p.x, y: p.y, cx: e.clientX, cy: e.clientY, t: Date.now() };
       return;
     }
     if (tool === "note") {
@@ -256,7 +247,36 @@ export function PdfStage({
     }
   }
 
-  function onPointerUp() {
+  function onPointerCancel() {
+    tap.current = null;
+    drag.current = null;
+    setDraft(null);
+    setInk(null);
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    const t = tap.current;
+    tap.current = null;
+    if (tool === "textbox" && t) {
+      const moved = Math.hypot(e.clientX - t.cx, e.clientY - t.cy);
+      if (moved < 8 && Date.now() - t.t < 700) {
+        const id = uid("a");
+        addAnnot({
+          id,
+          page: pageIndex,
+          type: "text",
+          x: Math.min(t.x, 0.68),
+          y: Math.min(t.y, 0.95),
+          w: 0.32,
+          h: 0.05,
+          text: "",
+          color: color === "#f2d56b" ? "#1c1917" : color,
+          fontSize,
+        });
+        setFocusId(id);
+      }
+      return;
+    }
     const d = drag.current;
     drag.current = null;
     if (tool === "pen" && ink && ink.length > 1) {
@@ -322,11 +342,13 @@ export function PdfStage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center overflow-auto p-4 md:p-8">
-      {tool === "text" && (
+      {(tool === "text" || tool === "textbox") && (
         <p className="mb-3 max-w-lg rounded-lg bg-surface px-3 py-2 text-center text-xs leading-relaxed text-muted shadow-[var(--shadow-paper)]">
-          {lines.length > 0
-            ? "Dashed boxes are the words already in this PDF. Click one, type the new text, then download."
-            : "This page’s letters are a picture or drawn shapes, not real text. Click the name and type over it — a white box covers the old word."}
+          {tool === "textbox"
+            ? "Tap the page where you want to add text."
+            : lines.length > 0
+              ? "Tap any line of text to change it, then download."
+              : "This page has no real text (it is a picture or drawn shapes). Use Add text to write on top of it."}
         </p>
       )}
       {error && (
@@ -338,12 +360,13 @@ export function PdfStage({
         ref={wrapRef}
         className={cn(
           "relative shrink-0 shadow-[var(--shadow-paper)]",
-          tool === "select" ? "cursor-default" : tool === "text" ? "cursor-text" : "cursor-crosshair",
+          tool === "select" ? "cursor-default" : tool === "text" || tool === "textbox" ? "cursor-text" : "cursor-crosshair",
         )}
-        style={{ width: size.w, height: size.h }}
+        style={{ width: size.w, height: size.h, touchAction: DRAW_TOOLS.includes(tool) ? "none" : "auto" }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
       >
         <canvas ref={canvasRef} className="block bg-paper" />
         <div className="pointer-events-none absolute inset-0 z-10">
@@ -420,10 +443,17 @@ export function PdfStage({
             a.type === "text" ? (
               <textarea
                 key={a.id}
+                ref={(el) => {
+                  if (el && focusId === a.id) {
+                    el.focus();
+                    setFocusId(null);
+                  }
+                }}
                 className={cn(
-                  "absolute z-20 resize-none bg-white p-1 text-ink outline-none",
-                  selectedId === a.id && "ring-1 ring-accent",
+                  "absolute z-20 resize-none bg-transparent p-1 text-ink outline-none placeholder:text-subtle/70",
+                  selectedId === a.id ? "ring-1 ring-accent" : "hover:ring-1 hover:ring-border",
                 )}
+                placeholder="Type here"
                 style={{
                   left: `${a.x * 100}%`,
                   top: `${a.y * 100}%`,
@@ -441,6 +471,10 @@ export function PdfStage({
                   select(a.id);
                 }}
                 onChange={(e) => updateAnnot(a.id, { text: e.target.value } as Partial<Annot>)}
+                onBlur={() => {
+                  // A box that was never typed into is just clutter: drop it.
+                  if (a.text.trim() === "") removeAnnot(a.id);
+                }}
               />
             ) : null,
           )}
@@ -756,9 +790,13 @@ function LineEdit({
   );
 }
 
+/** Tools that need the finger/pen to draw, so the browser must not treat the drag as a scroll. */
+export const DRAW_TOOLS: Tool[] = ["pen", "highlight", "underline", "strike", "rect", "ellipse", "line", "arrow", "redact"];
+
 export const PDF_TOOLS: { id: Tool; label: string }[] = [
   { id: "select", label: "Select" },
-  { id: "text", label: "Text" },
+  { id: "text", label: "Edit text" },
+  { id: "textbox", label: "Add text" },
   { id: "highlight", label: "Highlight" },
   { id: "underline", label: "Underline" },
   { id: "strike", label: "Strike" },

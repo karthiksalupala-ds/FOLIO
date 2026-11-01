@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { deleteMap, duplicateAnnots, insertAfterMap, moveMap, remapAnnots } from "./page-ops";
 import type { Annot, DocKind, FolioDoc, FolioMeta, PageMeta, Tool } from "./types";
 import { kindFromName } from "./types";
 import { uid, asArrayBuffer } from "@/lib/utils";
@@ -248,8 +249,8 @@ export const useFolio = create<FolioState>((set, get) => ({
     const doc = get().current;
     if (!doc || doc.pages.length <= 1) return;
     const pages = doc.pages.filter((_, idx) => idx !== i);
-    get().patchCurrent({ pages });
-    set({ pageIndex: Math.min(i, pages.length - 1) });
+    get().patchCurrent({ pages, annotations: remapAnnots(doc.annotations, deleteMap(i)) });
+    set({ pageIndex: Math.min(i, pages.length - 1), selectedId: null });
   },
 
   duplicatePage: (i) => {
@@ -258,7 +259,7 @@ export const useFolio = create<FolioState>((set, get) => ({
     const src = doc.pages[i];
     const copy: PageMeta = { ...src, id: uid("pg") };
     const pages = [...doc.pages.slice(0, i + 1), copy, ...doc.pages.slice(i + 1)];
-    get().patchCurrent({ pages });
+    get().patchCurrent({ pages, annotations: duplicateAnnots(doc.annotations, i, () => uid("a")) });
   },
 
   movePage: (from, to) => {
@@ -267,7 +268,7 @@ export const useFolio = create<FolioState>((set, get) => ({
     const pages = [...doc.pages];
     const [item] = pages.splice(from, 1);
     pages.splice(to, 0, item);
-    get().patchCurrent({ pages });
+    get().patchCurrent({ pages, annotations: remapAnnots(doc.annotations, moveMap(from, to)) });
     set({ pageIndex: to });
   },
 
@@ -284,6 +285,7 @@ export const useFolio = create<FolioState>((set, get) => ({
     get().patchCurrent({
       bytes: asArrayBuffer(bytes),
       pages,
+      annotations: remapAnnots(doc.annotations, insertAfterMap(i)),
     });
   },
 
