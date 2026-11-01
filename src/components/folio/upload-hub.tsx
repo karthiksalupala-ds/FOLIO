@@ -56,7 +56,7 @@ export function UploadHub() {
   }
 
   return (
-    <div className="mx-auto mt-8 w-full max-w-3xl text-left" data-tint="red">
+    <div className="mx-auto mt-6 w-full max-w-3xl text-left" data-tint="red">
       <input
         ref={inputRef}
         type="file"
@@ -71,7 +71,7 @@ export function UploadHub() {
       {files.length === 0 ? (
         <div
           data-active={dragging}
-          className="drop-zone flex cursor-pointer flex-col items-center px-6 py-10 text-center"
+          className="drop-zone flex cursor-pointer flex-col items-center px-5 py-7 text-center md:py-8"
           onClick={() => inputRef.current?.click()}
           onDragOver={(e) => {
             e.preventDefault();
@@ -84,14 +84,14 @@ export function UploadHub() {
             if (e.dataTransfer.files.length) void take(e.dataTransfer.files);
           }}
         >
-          <span className="grid size-14 place-items-center rounded-full bg-accent text-accent-fg">
-            <CloudUpload className="size-7" />
+          <span className="grid size-12 place-items-center rounded-full bg-accent text-accent-fg shadow-[0_10px_24px_-12px_var(--color-accent)]">
+            <CloudUpload className="size-6" />
           </span>
-          <p className="mt-4 text-xl font-extrabold">Upload a PDF</p>
+          <p className="mt-3 text-lg font-extrabold">Upload a PDF</p>
           <p className="mt-1 max-w-md text-sm text-muted">
-            Drop any PDF, Word, PowerPoint, Excel or image. Then pick Edit, Merge, Compress, Convert and the rest.
+            PDF, Word, PowerPoint, Excel or an image. Then pick Edit, Merge, Compress or Convert.
           </p>
-          <span className="mt-5 inline-flex h-12 items-center rounded-md bg-accent px-6 text-base font-extrabold text-accent-fg">
+          <span className="mt-4 inline-flex h-11 items-center rounded-md bg-accent px-5 text-sm font-extrabold text-accent-fg">
             Select files
           </span>
         </div>

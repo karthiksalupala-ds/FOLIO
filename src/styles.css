@@ -6,7 +6,7 @@
   --font-display: "Bricolage Grotesque", "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
 
-  --color-bg: #ffffff;
+  --color-bg: #f3f4f8;
   --color-surface: #ffffff;
   --color-raised: #f4f4f8;
   --color-fg: #33333b;
@@ -167,6 +167,10 @@
 
   .text-layer-item.is-live {
     cursor: text;
+    outline: 1px dashed rgb(229 50 45 / 0.55);
+    outline-offset: 1px;
+    border-radius: 2px;
+    z-index: 2;
   }
 
   .text-layer-item.is-live:hover,
@@ -188,26 +192,30 @@
     flex-direction: column;
     justify-content: flex-start;
     align-items: flex-start;
-    gap: 0.75rem;
-    min-height: 9.5rem;
-    border-radius: var(--radius-md);
+    gap: 0.65rem;
+    min-height: 8.25rem;
+    border-radius: 16px;
     background: var(--color-surface);
-    padding: 1.15rem 1.05rem 1.2rem;
-    box-shadow: var(--shadow-paper);
+    padding: 1rem 0.95rem 1.05rem;
+    box-shadow: 0 0 0 1px rgb(31 34 48 / 0.05), 0 8px 20px -14px rgb(31 34 48 / 0.22);
     transition:
       transform 180ms var(--ease-out),
       box-shadow 180ms var(--ease-out);
   }
 
   .tool-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-pop);
+    transform: translateY(-3px);
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--color-accent) 40%, transparent),
+      0 16px 32px -16px rgb(31 34 48 / 0.3);
   }
 
   .drop-zone {
-    border: 2px dashed color-mix(in oklab, var(--tool, var(--color-accent)) 35%, var(--color-border));
-    background: var(--color-surface);
-    border-radius: var(--radius-xl);
+    border: 1.5px dashed color-mix(in oklab, var(--tool, var(--color-accent)) 45%, var(--color-border));
+    background:
+      radial-gradient(120% 80% at 50% 0%, color-mix(in oklab, var(--tool, var(--color-accent)) 10%, transparent), transparent 70%),
+      var(--color-surface);
+    border-radius: 20px;
   }
 
   .drop-zone[data-active="true"] {
@@ -238,15 +246,15 @@
   }
 
   .search-field {
-    height: 52px;
+    height: 48px;
     width: 100%;
     border-radius: 999px;
-    background: var(--color-raised);
+    background: var(--color-surface);
     color: var(--color-fg);
-    padding: 0 20px 0 48px;
-    box-shadow: 0 0 0 1px var(--color-border);
+    padding: 0 20px 0 46px;
+    box-shadow: 0 0 0 1px var(--color-border), 0 8px 20px -16px rgb(31 34 48 / 0.4);
     font: inherit;
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
 
   .search-field::placeholder {
@@ -254,21 +262,20 @@
   }
 
   .cat-tab {
-    height: 44px;
+    height: 36px;
     flex-shrink: 0;
-    border-bottom: 3px solid transparent;
+    border-radius: 999px;
     padding: 0 14px;
-    font-size: 0.78rem;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-size: 0.84rem;
+    font-weight: 700;
     color: var(--color-muted);
+    background: transparent;
     white-space: nowrap;
   }
 
   .cat-tab[data-active="true"] {
-    color: var(--color-accent);
-    border-bottom-color: var(--color-accent);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
   }
 
   .tint-red,

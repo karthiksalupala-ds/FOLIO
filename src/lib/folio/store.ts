@@ -205,7 +205,11 @@ export const useFolio = create<FolioState>((set, get) => ({
     if (get().selectedId === id) set({ selectedId: null });
   },
 
-  select: (selectedId) => set({ selectedId, tool: "select" }),
+  select: (selectedId) =>
+    set((s) => ({
+      selectedId,
+      tool: s.tool === "text" ? "text" : selectedId ? "select" : s.tool,
+    })),
 
   undo: () => {
     const { past, current, future } = get();

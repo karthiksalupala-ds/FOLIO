@@ -306,7 +306,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                     setDragging(false);
                     if (e.dataTransfer.files.length) void addList(e.dataTransfer.files);
                   }}
-                  className="drop-zone flex min-h-80 cursor-pointer flex-col items-center justify-center px-6 py-14 text-center"
+                  className="drop-zone flex min-h-60 cursor-pointer flex-col items-center justify-center px-6 py-10 text-center"
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest("button")) return;
                     inputRef.current?.click();

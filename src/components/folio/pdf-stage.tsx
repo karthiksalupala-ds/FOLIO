@@ -54,6 +54,10 @@ export function PdfStage({
   const select = useFolio((s) => s.select);
   const setTool = useFolio((s) => s.setTool);
 
+  useEffect(() => {
+    if (useFolio.getState().tool === "select") setTool("text");
+  }, [doc.id, setTool]);
+
   const pageMeta = doc.pages[pageIndex];
   const pageAnnots = doc.annotations.filter((a) => a.page === pageIndex);
 
@@ -144,6 +148,8 @@ export function PdfStage({
       return;
     }
     if (tool === "text") {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.(".text-layer-item")) return;
       addAnnot({
         id: uid("a"),
         page: pageIndex,
@@ -318,7 +324,9 @@ export function PdfStage({
     <div className="flex min-h-0 flex-1 flex-col items-center overflow-auto p-4 md:p-8">
       {tool === "text" && (
         <p className="mb-3 max-w-lg rounded-lg bg-surface px-3 py-2 text-center text-xs leading-relaxed text-muted shadow-[var(--shadow-paper)]">
-          Click a line and type to rewrite it. Download saves the new words into the PDF.
+          {lines.length > 0
+            ? "Dashed boxes are the words already in this PDF. Click one, type the new text, then download."
+            : "This page’s letters are a picture or drawn shapes, not real text. Click the name and type over it — a white box covers the old word."}
         </p>
       )}
       {error && (
@@ -338,7 +346,7 @@ export function PdfStage({
         onPointerUp={onPointerUp}
       >
         <canvas ref={canvasRef} className="block bg-paper" />
-        <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-none absolute inset-0 z-10">
           {lines.map((line) => {
             const repl = pageAnnots.find(
               (a) => a.type === "replace" && covers(a, line),
@@ -379,7 +387,7 @@ export function PdfStage({
             );
           })}
         </div>
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none">
+        <svg className="pointer-events-none absolute inset-0 z-[1] h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none">
           {pageAnnots.map((a) => (
             <AnnotShape key={a.id} a={a} selected={a.id === selectedId} />
           ))}
@@ -413,7 +421,7 @@ export function PdfStage({
               <textarea
                 key={a.id}
                 className={cn(
-                  "absolute resize-none bg-transparent p-1 text-ink outline-none",
+                  "absolute z-20 resize-none bg-white p-1 text-ink outline-none",
                   selectedId === a.id && "ring-1 ring-accent",
                 )}
                 style={{
@@ -668,9 +676,9 @@ function groupLines(items: TextItem[]): TextLine[] {
     text: l.text,
     look: l.look,
     nx: l.left / vw,
-    ny: l.top / vh,
+    ny: Math.max(0, (l.top - l.fontSize * 0.15) / vh),
     nw: l.width / vw,
-    nh: l.height / vh,
+    nh: (l.height * 1.35) / vh,
   }));
 }
 
@@ -714,11 +722,11 @@ function LineEdit({
       suppressContentEditableWarning
       spellCheck={false}
       style={{
-        left: line.left,
-        top: line.top,
+        left: line.left - 2,
+        top: line.top - 2,
         fontSize: line.fontSize,
-        width: Math.max(line.width, 12),
-        minHeight: line.height,
+        width: Math.max(line.width + 8, 24),
+        minHeight: Math.max(line.height + 4, line.fontSize + 4),
         ...(look
           ? {
               color: look.color,
@@ -731,6 +739,17 @@ function LineEdit({
       }}
       onPointerDown={(e) => {
         if (editable) e.stopPropagation();
+      }}
+      onFocus={(e) => {
+        const el = e.currentTarget;
+        requestAnimationFrame(() => {
+          const sel = window.getSelection();
+          if (!sel || document.activeElement !== el) return;
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        });
       }}
       onBlur={(e) => onCommit(e.currentTarget.textContent ?? "")}
     />
