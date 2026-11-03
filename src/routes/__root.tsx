@@ -1,3 +1,4 @@
+import { RouteProgress } from "@/components/folio/loading";
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
@@ -44,6 +45,7 @@ export const Route = createRootRoute({
       </head>
       <body className="bg-bg text-fg">
         <PreviewHostBridge />
+        <RouteProgress />
         <AuthProvider>
           <TooltipProvider delayDuration={280}>
             <Outlet />

@@ -63,6 +63,7 @@ import {
 import { FolioWordmark } from "@/components/folio/mark";
 import { PdfStage, PDF_TOOLS } from "@/components/folio/pdf-stage";
 import { PageThumb } from "@/components/folio/page-thumb";
+import { Spinner } from "@/components/folio/loading";
 import {
   MarkdownEditor,
   RichDocEditor,
@@ -196,8 +197,11 @@ export function EditorShell({ docId }: { docId: string }) {
 
   if (!ready) {
     return (
-      <div className="grid min-h-dvh place-items-center bg-bg text-muted">
-        Opening document…
+      <div className="grid min-h-dvh place-items-center bg-bg" role="status" aria-live="polite">
+        <div className="flex flex-col items-center gap-3 text-muted">
+          <Spinner className="size-9 text-accent" />
+          <p className="text-sm font-semibold">Opening your document…</p>
+        </div>
       </div>
     );
   }

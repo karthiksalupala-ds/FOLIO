@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { CloudUpload, X } from "lucide-react";
+import { Spinner } from "@/components/folio/loading";
 import { toast } from "sonner";
 import { ToolGlyph } from "@/components/folio/tool-icons";
 import { getTool, type ToolId } from "@/lib/folio/catalog";
@@ -37,22 +38,32 @@ export function UploadHub() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [files, setFiles] = useState<JobFile[]>([]);
+  const [reading, setReading] = useState<string | null>(null);
 
   async function take(list: FileList | File[]) {
-    const next: JobFile[] = [];
-    for (const f of Array.from(list).slice(0, 12)) {
-      if (f.size > 40 * 1024 * 1024) {
-        toast.error(`${f.name} is larger than 40 MB`);
-        continue;
+    if (reading) return; // already busy: ignore repeat taps and drops
+    const picked = Array.from(list).slice(0, 12);
+    setReading(picked.length === 1 ? `Reading ${picked[0].name}` : `Reading ${picked.length} files`);
+    try {
+      const next: JobFile[] = [];
+      for (const f of picked) {
+        if (f.size > 40 * 1024 * 1024) {
+          toast.error(`${f.name} is larger than 40 MB`);
+          continue;
+        }
+        next.push({
+          id: uid("f"),
+          name: f.name,
+          bytes: await f.arrayBuffer(),
+          mime: f.type || "application/octet-stream",
+        });
       }
-      next.push({
-        id: uid("f"),
-        name: f.name,
-        bytes: await f.arrayBuffer(),
-        mime: f.type || "application/octet-stream",
-      });
+      if (next.length) setFiles(next);
+    } catch {
+      toast.error("Could not read that file. Try picking it again.");
+    } finally {
+      setReading(null);
     }
-    if (next.length) setFiles(next);
   }
 
   return (
@@ -72,7 +83,10 @@ export function UploadHub() {
         <div
           data-active={dragging}
           className="drop-zone flex cursor-pointer flex-col items-center px-5 py-7 text-center md:py-8"
-          onClick={() => inputRef.current?.click()}
+          aria-busy={!!reading}
+          onClick={() => {
+            if (!reading) inputRef.current?.click();
+          }}
           onDragOver={(e) => {
             e.preventDefault();
             setDragging(true);
@@ -85,14 +99,18 @@ export function UploadHub() {
           }}
         >
           <span className="grid size-12 place-items-center rounded-full bg-accent text-accent-fg shadow-[0_10px_24px_-12px_var(--color-accent)]">
-            <CloudUpload className="size-6" />
+            {reading ? <Spinner className="size-6" /> : <CloudUpload className="size-6" />}
           </span>
-          <p className="mt-3 text-lg font-extrabold">Upload a PDF</p>
+          <p className="mt-3 text-lg font-extrabold" role="status" aria-live="polite">
+            {reading ? `${reading}…` : "Upload a PDF"}
+          </p>
           <p className="mt-1 max-w-md text-sm text-muted">
             PDF, Word, PowerPoint, Excel or an image. Then pick Edit, Merge, Compress or Convert.
           </p>
-          <span className="mt-4 inline-flex h-11 items-center rounded-md bg-accent px-5 text-sm font-extrabold text-accent-fg">
-            Select files
+          <span
+            className={`mt-4 inline-flex h-11 items-center gap-2 rounded-md bg-accent px-5 text-sm font-extrabold text-accent-fg ${reading ? "opacity-60" : ""}`}
+          >
+            {reading ? "Please wait" : "Select files"}
           </span>
         </div>
       ) : (
@@ -124,9 +142,10 @@ export function UploadHub() {
           <button
             type="button"
             className="mt-3 text-sm font-bold text-accent"
+            disabled={!!reading}
             onClick={() => inputRef.current?.click()}
           >
-            Add another file
+            {reading ? `${reading}…` : "Add another file"}
           </button>
         </div>
       )}
@@ -141,11 +160,14 @@ export function FileActions({ files, except }: { files: JobFile[]; except?: stri
     (id) => id !== except,
   );
 
+  const [opening, setOpening] = useState<ToolId | null>(null);
+
   function open(id: ToolId) {
     const tool = getTool(id);
-    if (!tool) return;
+    if (!tool || opening) return; // one tap is enough: ignore repeats while the page loads
+    setOpening(id);
     stashFiles(files.slice(0, tool.maxFiles));
-    void navigate({ to: "/tools/$toolId", params: { toolId: id } });
+    navigate({ to: "/tools/$toolId", params: { toolId: id } }).catch(() => setOpening(null));
   }
 
   return (
@@ -154,9 +176,16 @@ export function FileActions({ files, except }: { files: JobFile[]; except?: stri
         const tool = getTool(id);
         if (!tool) return null;
         return (
-          <button key={id} type="button" className="tool-card min-h-0 items-center gap-2 py-3 text-left" onClick={() => open(id)}>
-            <ToolGlyph icon={tool.icon} tint={tool.tint} size="sm" />
-            <span className="text-sm font-extrabold">{tool.title}</span>
+          <button
+            key={id}
+            type="button"
+            disabled={!!opening}
+            aria-busy={opening === id}
+            className={`tool-card min-h-0 items-center gap-2 py-3 text-left disabled:cursor-wait ${opening && opening !== id ? "opacity-50" : ""}`}
+            onClick={() => open(id)}
+          >
+            {opening === id ? <Spinner className="size-7 shrink-0 text-accent" /> : <ToolGlyph icon={tool.icon} tint={tool.tint} size="sm" />}
+            <span className="text-sm font-extrabold">{opening === id ? "Opening…" : tool.title}</span>
           </button>
         );
       })}

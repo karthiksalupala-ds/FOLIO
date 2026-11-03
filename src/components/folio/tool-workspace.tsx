@@ -33,6 +33,7 @@ import { samplesForTool } from "@/lib/folio/sample";
 import { useFolio } from "@/lib/folio/store";
 import { shareBlob } from "@/lib/folio/share";
 import { jobFromBlob, stashFiles, takeStash } from "@/lib/folio/pending";
+import { Spinner } from "@/components/folio/loading";
 import { openPdfJs, renderPageToCanvas } from "@/lib/folio/pdf";
 import { cn, downloadBlob, formatBytes, uid } from "@/lib/utils";
 
@@ -56,6 +57,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
   const [files, setFiles] = useState<JobFile[]>([]);
   const [dragging, setDragging] = useState(false);
   const [running, setRunning] = useState(false);
+  const [reading, setReading] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [label, setLabel] = useState("");
   const [results, setResults] = useState<JobResultFile[] | null>(null);
@@ -84,9 +86,14 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
     const queued = takeStash();
     if (queued?.length) {
       void (async () => {
-        const next: JobFile[] = [];
-        for (const f of queued) next.push(await enrich(f));
-        setFiles(next.slice(0, tool.maxFiles));
+        setReading(queued.length === 1 ? `Preparing ${queued[0].name}` : `Preparing ${queued.length} files`);
+        try {
+          const next: JobFile[] = [];
+          for (const f of queued) next.push(await enrich(f));
+          setFiles(next.slice(0, tool.maxFiles));
+        } finally {
+          setReading(null);
+        }
       })();
       return;
     }
@@ -167,28 +174,38 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
   }
 
   async function addList(list: FileList | File[]) {
+    if (reading) return; // ignore repeat taps while the last pick is still being read
     const incoming = Array.from(list);
-    const next: JobFile[] = [];
-    for (const f of incoming) {
-      if (f.size > 40 * 1024 * 1024) {
-        toast.error(`${f.name} is larger than 40 MB`);
-        continue;
+    setReading(incoming.length === 1 ? `Reading ${incoming[0].name}` : `Reading ${incoming.length} files`);
+    try {
+      const next: JobFile[] = [];
+      for (const f of incoming) {
+        if (f.size > 40 * 1024 * 1024) {
+          toast.error(`${f.name} is larger than 40 MB`);
+          continue;
+        }
+        next.push(
+          await enrich({
+            id: uid("f"),
+            name: f.name,
+            bytes: await f.arrayBuffer(),
+            mime: f.type,
+          }),
+        );
       }
-      next.push(
-        await enrich({
-          id: uid("f"),
-          name: f.name,
-          bytes: await f.arrayBuffer(),
-          mime: f.type,
-        }),
-      );
+      setFiles((cur) => [...cur, ...next].slice(0, tool.maxFiles));
+      setResults(null);
+      setError(null);
+    } catch {
+      toast.error("Could not read that file. Try picking it again.");
+    } finally {
+      setReading(null);
     }
-    setFiles((cur) => [...cur, ...next].slice(0, tool.maxFiles));
-    setResults(null);
-    setError(null);
   }
 
   async function loadSample(runAfter = false) {
+    if (reading) return;
+    setReading("Building a sample");
     try {
       const bundle = await samplesForTool(tool.id);
       const next: JobFile[] = [];
@@ -218,6 +235,8 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not build a sample");
+    } finally {
+      setReading(null);
     }
   }
 
@@ -237,8 +256,10 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
           ),
         );
         if (created[0]) {
-          toast.success("Opening editor");
-          void navigate({ to: "/editor/$docId", params: { docId: created[0].id } });
+          setLabel("Opening the editor");
+          setProgress(96);
+          // Wait for the editor page to actually load so the progress overlay stays up until then.
+          await navigate({ to: "/editor/$docId", params: { docId: created[0].id } });
         }
         return;
       }
@@ -306,12 +327,26 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                     setDragging(false);
                     if (e.dataTransfer.files.length) void addList(e.dataTransfer.files);
                   }}
-                  className="drop-zone flex min-h-60 cursor-pointer flex-col items-center justify-center px-6 py-10 text-center"
+                  aria-busy={!!reading}
+                  className="drop-zone relative flex min-h-60 cursor-pointer flex-col items-center justify-center px-6 py-10 text-center"
                   onClick={(e) => {
-                    if ((e.target as HTMLElement).closest("button")) return;
+                    if (reading || (e.target as HTMLElement).closest("button")) return;
                     inputRef.current?.click();
                   }}
                 >
+                  {reading && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="absolute inset-0 z-10 grid place-items-center rounded-[inherit] bg-surface/90"
+                    >
+                      <div className="flex flex-col items-center gap-3">
+                        <Spinner className="size-9" />
+                        <p className="text-base font-extrabold">{reading}…</p>
+                        <p className="text-xs text-muted">Large files can take a few seconds.</p>
+                      </div>
+                    </div>
+                  )}
                   <span
                     className="grid size-16 place-items-center rounded-full text-on-tool"
                     style={{ background: "var(--tool)" }}
@@ -324,6 +359,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                     <Button
                       variant="tool"
                       className="h-12 px-8 text-base font-bold"
+                      disabled={!!reading}
                       onClick={() => inputRef.current?.click()}
                     >
                       {capture ? "Take photo or browse" : "Select files"}
@@ -331,6 +367,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                     <Button
                       variant="secondary"
                       className="h-12 px-8 text-base font-bold"
+                      disabled={!!reading}
                       onClick={() => void loadSample(false)}
                     >
                       Try with a sample
@@ -338,6 +375,12 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                   </div>
                   <p className="mt-4 text-xs text-subtle">or drop files here · max 40 MB each</p>
                 </div>
+              )}
+
+              {reading && files.length > 0 && (
+                <p role="status" aria-live="polite" className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted">
+                  <Spinner className="size-4" /> {reading}…
+                </p>
               )}
 
               <input
@@ -506,6 +549,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
               disabled={!canRun}
               onClick={() => void process()}
             >
+              {running && <Spinner className="mr-2 size-4" />}
               {running ? "Working…" : tool.cta}
             </Button>
           </div>

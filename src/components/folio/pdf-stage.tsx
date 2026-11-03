@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyzeColors, type FontLook } from "@/lib/folio/text-style";
+import { Spinner } from "@/components/folio/loading";
 import { uid } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useFolio } from "@/lib/folio/store";
@@ -30,6 +31,7 @@ export function PdfStage({
   const [size, setSize] = useState({ w: 612, h: 792 });
   const [items, setItems] = useState<TextItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(true);
   const [draft, setDraft] = useState<null | { x: number; y: number; w: number; h: number }>(null);
   const [ink, setInk] = useState<Point[] | null>(null);
   const tap = useRef<{ x: number; y: number; cx: number; cy: number; t: number } | null>(null);
@@ -78,7 +80,10 @@ export function PdfStage({
           return loaded;
         });
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not open PDF");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not open PDF");
+          setBusy(false);
+        }
       }
     })();
     return () => {
@@ -89,6 +94,7 @@ export function PdfStage({
   useEffect(() => {
     if (!pdf || !canvasRef.current || !pageMeta) return;
     let cancelled = false;
+    setBusy(true);
     (async () => {
       try {
         const page = await pdf.getPage(pageMeta.source + 1);
@@ -106,6 +112,8 @@ export function PdfStage({
         if (!cancelled) setItems(text);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Render failed");
+      } finally {
+        if (!cancelled) setBusy(false);
       }
     })();
     return () => {
@@ -368,6 +376,17 @@ export function PdfStage({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
       >
+        {busy && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute inset-0 z-30 grid place-items-center bg-white/75 text-sm font-semibold text-muted"
+          >
+            <span className="flex items-center gap-2">
+              <Spinner className="size-5 text-accent" /> Loading page…
+            </span>
+          </div>
+        )}
         <canvas ref={canvasRef} className="block bg-paper" />
         <div className="pointer-events-none absolute inset-0 z-10">
           {lines.map((line) => {
