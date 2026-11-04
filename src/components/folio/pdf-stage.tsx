@@ -355,7 +355,7 @@ export function PdfStage({
           {tool === "textbox"
             ? "Tap the page where you want to add text."
             : lines.length > 0
-              ? "Tap any line of text to change it, then download."
+              ? "Tap a line and type the new words. Download takes the old letters out of the PDF and writes yours in their place."
               : "This page has no real text (it is a picture or drawn shapes). Use Add text to write on top of it."}
         </p>
       )}

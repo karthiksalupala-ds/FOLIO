@@ -3,6 +3,7 @@ import type { Annot, FolioDoc, PageMeta, Point } from "./types";
 import { uid, asArrayBuffer } from "@/lib/utils";
 import { drawRuns } from "./fonts";
 import { fontStyleFrom, type FontLook } from "./text-style";
+import { stripTextInRects } from "./strip-text";
 
 export type PdfJs = typeof import("pdfjs-dist");
 export type PdfDocProxy = import("pdfjs-dist").PDFDocumentProxy;
@@ -230,6 +231,20 @@ export async function bakePdf(doc: FolioDoc): Promise<Uint8Array> {
   }
 
   const pages = pdf.getPages();
+
+  const stripped = new Set<number>();
+  const byPage = new Map<number, { x: number; y: number; w: number; h: number }[]>();
+  for (const a of doc.annotations) {
+    if (a.type !== "replace") continue;
+    const list = byPage.get(a.page) ?? [];
+    list.push({ x: a.x, y: a.y, w: a.w, h: a.h });
+    byPage.set(a.page, list);
+  }
+  for (const [index, rects] of byPage) {
+    const page = pages[index];
+    if (page && stripTextInRects(page, rects) > 0) stripped.add(index);
+  }
+
   for (const meta of doc.pages) {
     const page = pages[meta.source];
     if (!page) continue;
@@ -239,7 +254,7 @@ export async function bakePdf(doc: FolioDoc): Promise<Uint8Array> {
   for (const a of doc.annotations) {
     const page = pages[a.page];
     if (!page) continue;
-    await drawAnnot(pdf, page, a, { helv, helvBold, times });
+    await drawAnnot(pdf, page, a, { helv, helvBold, times }, stripped.has(a.page));
   }
 
   if (doc.watermark?.text) {
@@ -297,6 +312,7 @@ async function drawAnnot(
   page: PDFPage,
   a: Annot,
   fonts: { helv: PDFFont; helvBold: PDFFont; times: PDFFont },
+  bareReplace = false,
 ) {
   const { width: pw, height: ph } = page.getSize();
   switch (a.type) {
@@ -376,9 +392,9 @@ async function drawAnnot(
     }
     case "text":
     case "replace": {
-      if (a.type === "replace") {
+      if (a.type === "replace" && !bareReplace) {
         const r = nToPdf(page, a.x, a.y, a.w, a.h);
-        // Cover descenders (g, y, p) that hang below the line box, plus a hair of side padding.
+        // Only when the original letters could not be removed (a scan or outlined type).
         const drop = a.fontSize * 0.16;
         page.drawRectangle({
           x: r.x - 1,

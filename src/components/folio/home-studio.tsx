@@ -4,7 +4,6 @@ import { ChevronDown, Search } from "lucide-react";
 import { AppShell } from "@/components/folio/app-chrome";
 import { EditDemo } from "@/components/folio/landing-demo";
 import { ToolGlyph } from "@/components/folio/tool-icons";
-import { UploadHub } from "@/components/folio/upload-hub";
 import {
   CATEGORIES,
   TOOLS,
@@ -72,17 +71,16 @@ export function HomeStudio() {
   return (
     <AppShell>
       <section id="start" className="scroll-mt-16 bg-surface">
-        <div className="mx-auto w-full max-w-6xl px-4 py-10 text-center md:px-8 md:py-16">
-          <h1 className="mx-auto max-w-3xl text-[clamp(1.9rem,5.4vw,3.15rem)] font-extrabold leading-[1.12] tracking-[-0.035em]">
-            Every tool you need to work with PDFs, at your fingertips
+        <div className="mx-auto w-full max-w-5xl px-4 py-12 text-center md:px-8 md:py-16">
+          <h1 className="font-display mx-auto max-w-4xl text-[clamp(2rem,5vw,3.4rem)] leading-[1.12] font-extrabold tracking-[-0.03em]">
+            Every tool you need to work with PDFs in one place
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted md:text-lg">
-            Upload a PDF and pick what to do — edit the text, merge, split, compress, convert, sign or protect. It all
-            runs in your browser.
+          <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-muted md:text-lg">
+            Merge, split, compress, convert, rotate, unlock and watermark PDFs with just a few clicks.
+            It runs in your browser.
           </p>
-          <UploadHub />
-          <label className="relative mx-auto mt-8 block max-w-xl text-left">
-            <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-subtle" />
+          <label className="relative mx-auto mt-6 block max-w-xl text-left">
+            <Search className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-subtle" />
             <input
               className="search-field"
               placeholder={`Search ${total} tools — merge, Word, compress, sign…`}
@@ -94,20 +92,22 @@ export function HomeStudio() {
         </div>
       </section>
 
-      <section id="tools" className="mx-auto w-full max-w-6xl scroll-mt-16 px-4 md:px-8">
+      <section id="tools" className="mx-auto w-full max-w-7xl scroll-mt-16 px-4 pb-4 md:px-6">
         {!searching && (
-          <div className="mt-5 flex gap-1 overflow-x-auto border-b border-border">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setCategory(c.id)}
-                data-active={category === c.id}
-                className="cat-tab"
-              >
-                {c.label}
-              </button>
-            ))}
+          <div className="flex justify-center">
+            <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setCategory(c.id)}
+                  data-active={category === c.id}
+                  className="cat-tab"
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -117,7 +117,7 @@ export function HomeStudio() {
           </p>
         )}
 
-        <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
           {list.length === 0 ? (
             <p className="col-span-full rounded-xl bg-raised px-4 py-10 text-center text-sm text-muted">
               No tools match that search. Try &ldquo;merge&rdquo;, &ldquo;Word&rdquo; or &ldquo;sign&rdquo;.
@@ -224,10 +224,8 @@ function ToolCard({ tool }: { tool: PdfTool }) {
   return (
     <Link to="/tools/$toolId" params={{ toolId: tool.id }} className="tool-card">
       <ToolGlyph icon={tool.icon} tint={tool.tint} />
-      <div>
-        <h2 className="text-[15px] font-extrabold tracking-tight">{tool.title}</h2>
-        <p className="mt-1 text-sm leading-snug text-muted">{tool.blurb}</p>
-      </div>
+      <h2 className="mt-2 text-base font-bold tracking-tight">{tool.title}</h2>
+      <p className="line-clamp-3 text-sm leading-relaxed text-muted">{tool.blurb}</p>
     </Link>
   );
 }

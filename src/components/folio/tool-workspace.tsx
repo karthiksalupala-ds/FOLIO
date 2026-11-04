@@ -3,8 +3,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
-  Check,
-  CloudUpload,
   Download,
   FileText,
   PenLine,
@@ -14,7 +12,6 @@ import {
 import { toast } from "sonner";
 import { AppShell } from "@/components/folio/app-chrome";
 import { FormBuilder } from "@/components/folio/form-builder";
-import { FileActions } from "@/components/folio/upload-hub";
 import { ToolGlyph } from "@/components/folio/tool-icons";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -293,25 +290,8 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
   return (
     <AppShell>
       <div data-tint={tool.tint}>
-        <section className={cn("text-on-tool", results ? "bg-ok" : `tint-${tool.tint}`)}>
-          <div className="mx-auto flex w-full max-w-4xl flex-col items-center px-4 py-10 text-center md:px-8 md:py-14">
-            {results ? (
-              <span className="grid size-16 place-items-center rounded-full bg-surface text-ok shadow-[var(--shadow-pop)]">
-                <Check className="size-8" />
-              </span>
-            ) : (
-              <ToolGlyph icon={tool.icon} tint={tool.tint} size="lg" className="shadow-[var(--shadow-pop)]" />
-            )}
-            <h1 className="mt-4 text-3xl font-extrabold tracking-tight md:text-4xl">
-              {results ? tool.done : tool.title}
-            </h1>
-            <p className="mt-2 max-w-xl text-sm text-on-tool/90 md:text-base">
-              {results ? "Your file is ready to download or share." : tool.blurb}
-            </p>
-          </div>
-        </section>
-
-        <div className="mx-auto w-full max-w-3xl px-4 py-8 pb-32 md:px-8">
+        <section className="bg-[#f3f4f8]">
+          <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
           {!results ? (
             <>
               {files.length === 0 && (
@@ -328,7 +308,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                     if (e.dataTransfer.files.length) void addList(e.dataTransfer.files);
                   }}
                   aria-busy={!!reading}
-                  className="drop-zone relative flex min-h-60 cursor-pointer flex-col items-center justify-center px-6 py-10 text-center"
+                  className="relative flex min-h-[62vh] cursor-pointer flex-col items-center justify-center px-6 py-16 text-center"
                   onClick={(e) => {
                     if (reading || (e.target as HTMLElement).closest("button")) return;
                     inputRef.current?.click();
@@ -347,33 +327,27 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
                       </div>
                     </div>
                   )}
-                  <span
-                    className="grid size-16 place-items-center rounded-full text-on-tool"
-                    style={{ background: "var(--tool)" }}
+                  <h1 className="font-display text-4xl font-extrabold tracking-tight text-fg md:text-5xl">
+                    {tool.title}
+                  </h1>
+                  <p className="mt-3 max-w-xl text-base text-muted">{tool.blurb}</p>
+                  <Button
+                    variant="tool"
+                    className="mt-8 h-14 rounded-lg px-10 text-lg font-bold"
+                    disabled={!!reading}
+                    onClick={() => inputRef.current?.click()}
                   >
-                    <CloudUpload className="size-8" />
-                  </span>
-                  <p className="mt-5 text-2xl font-extrabold">Select {noun}</p>
-                  <p className="mt-1 max-w-md text-sm text-muted">{tool.hint}</p>
-                  <div className="mt-7 flex w-full max-w-md flex-col items-stretch gap-3 sm:flex-row sm:justify-center">
-                    <Button
-                      variant="tool"
-                      className="h-12 px-8 text-base font-bold"
-                      disabled={!!reading}
-                      onClick={() => inputRef.current?.click()}
-                    >
-                      {capture ? "Take photo or browse" : "Select files"}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      className="h-12 px-8 text-base font-bold"
-                      disabled={!!reading}
-                      onClick={() => void loadSample(false)}
-                    >
-                      Try with a sample
-                    </Button>
-                  </div>
-                  <p className="mt-4 text-xs text-subtle">or drop files here · max 40 MB each</p>
+                    {capture ? "Take photo or browse" : `Select ${noun}`}
+                  </Button>
+                  <p className="mt-4 text-sm text-muted">or drop {noun} here</p>
+                  <button
+                    type="button"
+                    className="mt-6 text-sm font-bold text-accent"
+                    disabled={!!reading}
+                    onClick={() => void loadSample(false)}
+                  >
+                    Try with a sample
+                  </button>
                 </div>
               )}
 
@@ -397,102 +371,97 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
               />
 
               {files.length > 0 && (
-                <>
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-bold">
-                      {files.length} {files.length === 1 ? "file" : "files"} selected
-                      {tool.multiple ? " · drag to reorder" : ""}
+                <div className="grid items-start gap-6 lg:grid-cols-[1fr_280px]">
+                  <div>
+                    <p className="mb-3 text-sm text-muted">
+                      {tool.multiple ? "Drag the pages to change the order." : `${files.length} file ready.`}
                     </p>
-                    <div className="flex gap-2">
-                      {files.length < tool.maxFiles && (
-                        <Button variant="secondary" size="sm" onClick={() => inputRef.current?.click()}>
-                          Add more
-                        </Button>
-                      )}
-                      <Button variant="secondary" size="sm" onClick={() => void loadSample()}>
-                        Use sample
-                      </Button>
-                    </div>
-                  </div>
-                  <ul className="space-y-2">
-                    {files.map((f, i) => (
-                      <li
-                        key={f.id}
-                        draggable={tool.multiple}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("text/plain", String(i));
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const from = Number(e.dataTransfer.getData("text/plain"));
-                          if (!Number.isNaN(from)) setFiles(move(files, from, i));
-                        }}
-                        className="flex items-center gap-3 rounded-xl bg-surface px-3 py-3 shadow-[var(--shadow-paper)]"
-                      >
-                        <FileThumb file={f} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-bold">{f.name}</p>
-                          <p className="text-xs text-muted">
-                            {formatBytes(f.bytes.byteLength)}
-                            {f.pages ? ` · ${f.pages} ${f.pages === 1 ? "page" : "pages"}` : ""}
-                          </p>
-                        </div>
-                        {tool.multiple && (
-                          <div className="flex">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              aria-label="Move up"
-                              disabled={i === 0}
-                              onClick={() => setFiles(move(files, i, i - 1))}
-                            >
-                              <ArrowUp />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              aria-label="Move down"
-                              disabled={i === files.length - 1}
-                              onClick={() => setFiles(move(files, i, i + 1))}
-                            >
-                              <ArrowDown />
-                            </Button>
-                          </div>
-                        )}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Remove"
-                          onClick={() => setFiles(files.filter((x) => x.id !== f.id))}
+                    <ul className="flex flex-wrap gap-4">
+                      {files.map((f, i) => (
+                        <li
+                          key={f.id}
+                          draggable={tool.multiple}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("text/plain", String(i));
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const from = Number(e.dataTransfer.getData("text/plain"));
+                            if (!Number.isNaN(from)) setFiles(move(files, from, i));
+                          }}
+                          className="w-40"
                         >
-                          <Trash2 />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-
-              {showOptionsEmpty || files.length > 0 ? (
-                <ToolOptions tool={tool} options={options} setOptions={setOptions} thumbs={thumbs} />
-              ) : null}
-
-              {tool.id === "pdf-forms" && files[0] && (
-                <FormBuilder
-                  bytes={files[0].bytes}
-                  fields={options.formFields ?? []}
-                  onChange={(formFields) => setOptions((o) => ({ ...o, formFields }))}
-                />
-              )}
-
-              {files.length > 0 && tool.id !== "edit-pdf" && (
-                <div className="mt-8">
-                  <h2 className="text-sm font-extrabold">Use this file for something else</h2>
-                  <FileActions files={files} except={tool.id} />
+                          <div className="relative rounded-xl bg-surface p-3 shadow-[var(--shadow-paper)]">
+                            <FileThumb file={f} large />
+                            <button
+                              type="button"
+                              aria-label="Remove"
+                              className="absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-surface text-muted shadow"
+                              onClick={() => setFiles(files.filter((x) => x.id !== f.id))}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                            {tool.multiple && (
+                              <div className="mt-2 flex justify-center gap-1">
+                                <Button size="icon" variant="ghost" aria-label="Move up" disabled={i === 0} onClick={() => setFiles(move(files, i, i - 1))}>
+                                  <ArrowUp />
+                                </Button>
+                                <Button size="icon" variant="ghost" aria-label="Move down" disabled={i === files.length - 1} onClick={() => setFiles(move(files, i, i + 1))}>
+                                  <ArrowDown />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                          <p className="mt-2 truncate text-center text-xs text-muted">{f.name}</p>
+                        </li>
+                      ))}
+                      {files.length < tool.maxFiles && (
+                        <li>
+                          <button
+                            type="button"
+                            onClick={() => inputRef.current?.click()}
+                            className="grid size-12 place-items-center rounded-full bg-accent text-2xl font-bold text-accent-fg"
+                            aria-label="Add another file"
+                          >
+                            +
+                          </button>
+                        </li>
+                      )}
+                    </ul>
+                    {showOptionsEmpty || files.length > 0 ? (
+                      <ToolOptions tool={tool} options={options} setOptions={setOptions} thumbs={thumbs} />
+                    ) : null}
+                    {tool.id === "pdf-forms" && files[0] && (
+                      <FormBuilder
+                        bytes={files[0].bytes}
+                        fields={options.formFields ?? []}
+                        onChange={(formFields) => setOptions((o) => ({ ...o, formFields }))}
+                      />
+                    )}
+                  </div>
+                  <aside className="rounded-xl bg-surface p-5 shadow-[var(--shadow-paper)] lg:sticky lg:top-20">
+                    <h2 className="text-xl font-extrabold">{tool.title}</h2>
+                    <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+                      {tool.hint}
+                    </p>
+                    <Button
+                      variant="tool"
+                      className="mt-6 hidden h-12 w-full text-base font-extrabold lg:inline-flex"
+                      disabled={!canRun}
+                      onClick={() => void process()}
+                    >
+                      {running && <Spinner className="mr-2 size-4" />}
+                      {running ? "Working…" : tool.cta}
+                    </Button>
+                  </aside>
                 </div>
               )}
+
+              {files.length === 0 && showOptionsEmpty ? (
+                <ToolOptions tool={tool} options={options} setOptions={setOptions} thumbs={thumbs} />
+              ) : null}
 
               {error && (
                 <p className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>
@@ -532,20 +501,18 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
             </div>
           )}
         </div>
+        </section>
       </div>
 
       {(files.length > 0 || showOptionsEmpty) && !results && (
-        <div className="tool-dock" data-tint={tool.tint}>
-          <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3 md:px-8">
+        <div className={cn("tool-dock", files.length > 0 && "lg:hidden")} data-tint={tool.tint}>
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3">
             <p className="min-w-0 flex-1 truncate text-sm text-muted">
-              {blockedReason ||
-                (files.length
-                  ? `${files.length} ${files.length === 1 ? "file" : "files"} ready`
-                  : "Paste a URL or HTML, then convert")}
+              {blockedReason || (files.length ? `${files.length} ready` : "Add the details, then run")}
             </p>
             <Button
               variant="tool"
-              className="h-12 shrink-0 px-8 text-base font-extrabold"
+              className="h-12 shrink-0 rounded-lg px-6 text-base font-extrabold"
               disabled={!canRun}
               onClick={() => void process()}
             >
@@ -575,7 +542,7 @@ export function ToolWorkspace({ tool }: { tool: PdfTool }) {
   );
 }
 
-function FileThumb({ file }: { file: JobFile }) {
+function FileThumb({ file, large = false }: { file: JobFile; large?: boolean }) {
   const [url, setUrl] = useState<string | null>(file.thumb ?? null);
   useEffect(() => {
     if (file.thumb) {
@@ -588,11 +555,11 @@ function FileThumb({ file }: { file: JobFile }) {
     return () => URL.revokeObjectURL(u);
   }, [file]);
   if (url) {
-    return <img src={url} alt="" className="size-12 rounded-md object-cover" />;
+    return <img src={url} alt="" className={large ? "mx-auto h-44 w-full rounded-md object-contain" : "size-12 rounded-md object-cover"} />;
   }
   return (
-    <span className="grid size-12 place-items-center rounded-md bg-raised text-fg">
-      <FileText className="size-5" />
+    <span className={large ? "mx-auto grid h-44 w-full place-items-center rounded-md bg-raised text-fg" : "grid size-12 place-items-center rounded-md bg-raised text-fg"}>
+      <FileText className={large ? "size-8" : "size-5"} />
     </span>
   );
 }

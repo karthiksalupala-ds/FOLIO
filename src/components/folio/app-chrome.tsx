@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
 import { FolioMark } from "@/components/folio/mark";
 import { ToolGlyph } from "@/components/folio/tool-icons";
-import { CATEGORIES, TOOLS, toolsIn, type CategoryId } from "@/lib/folio/catalog";
+import { CATEGORIES, TOOLS, toolsIn, type CategoryId, type ToolId } from "@/lib/folio/catalog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,49 +26,82 @@ export function FolioLogo({ compact = false }: { compact?: boolean }) {
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur-sm">
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 md:h-16 md:px-8">
+    <header className="sticky top-0 z-30 border-b border-border bg-surface">
+      <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-4 px-4 md:px-6">
         <FolioLogo />
-        <DropdownMenu>
-          <DropdownMenuTrigger className="ml-1 inline-flex h-10 items-center gap-1 rounded-md px-2 text-sm font-bold text-fg hover:bg-raised">
-            All PDF tools
-            <ChevronDown className="size-4 text-muted" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="w-[min(920px,calc(100vw-24px))] max-h-[min(70vh,640px)] overflow-auto p-4"
+        <nav className="ml-2 hidden items-center gap-1 lg:flex">
+          <NavLink id="merge-pdf" label="Merge PDF" />
+          <NavLink id="split-pdf" label="Split PDF" />
+          <NavLink id="compress-pdf" label="Compress PDF" />
+          <ToolMenu label="Convert PDF" category="convert" />
+          <ToolMenu label="All PDF tools" />
+        </nav>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="lg:hidden">
+            <ToolMenu label="Tools" />
+          </div>
+          <Link
+            to="/tools/$toolId"
+            params={{ toolId: "merge-pdf" }}
+            className="inline-flex h-9 items-center rounded-md bg-accent px-4 text-sm font-bold text-accent-fg"
           >
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {CATEGORIES.filter((c) => c.id !== "all").map((cat) => (
-                <div key={cat.id}>
-                  <p className="mb-2 text-[11px] font-extrabold tracking-wide text-muted uppercase">
-                    {cat.label}
-                  </p>
-                  <ul className="flex flex-col gap-0.5">
-                    {toolsIn(cat.id as CategoryId).map((t) => (
-                      <li key={t.id}>
-                        <Link
-                          to="/tools/$toolId"
-                          params={{ toolId: t.id }}
-                          className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-sm hover:bg-raised"
-                        >
-                          <ToolGlyph icon={t.icon} tint={t.tint} size="sm" />
-                          {t.title}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <p className="ml-auto hidden items-center gap-2 rounded-full bg-raised px-3 py-1.5 text-xs font-bold text-muted md:inline-flex">
-          <span className="size-1.5 rounded-full bg-ok" />
-          Runs in your browser
-        </p>
+            Start
+          </Link>
+        </div>
       </div>
     </header>
+  );
+}
+
+function NavLink({ id, label }: { id: ToolId; label: string }) {
+  return (
+    <Link
+      to="/tools/$toolId"
+      params={{ toolId: id }}
+      className="rounded-md px-2.5 py-2 text-[13px] font-bold tracking-wide text-fg uppercase hover:text-accent"
+    >
+      {label}
+    </Link>
+  );
+}
+
+function ToolMenu({ label, category }: { label: string; category?: CategoryId }) {
+  const cats = category ? CATEGORIES.filter((c) => c.id === category) : CATEGORIES.filter((c) => c.id !== "all");
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="inline-flex h-10 items-center gap-1 rounded-md px-2.5 text-[13px] font-bold tracking-wide text-fg uppercase hover:text-accent">
+        {label}
+        <ChevronDown className="size-4 text-muted" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-[min(920px,calc(100vw-24px))] max-h-[min(70vh,640px)] overflow-auto p-4"
+      >
+        <div className={category ? "grid gap-1" : "grid gap-5 sm:grid-cols-2 lg:grid-cols-3"}>
+          {cats.map((cat) => (
+            <div key={cat.id}>
+              {!category && (
+                <p className="mb-2 text-[11px] font-extrabold tracking-wide text-muted uppercase">{cat.label}</p>
+              )}
+              <ul className="flex flex-col gap-0.5">
+                {toolsIn(cat.id as CategoryId).map((t) => (
+                  <li key={t.id}>
+                    <Link
+                      to="/tools/$toolId"
+                      params={{ toolId: t.id }}
+                      className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-sm hover:bg-raised"
+                    >
+                      <ToolGlyph icon={t.icon} tint={t.tint} size="sm" />
+                      {t.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

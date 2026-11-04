@@ -192,22 +192,21 @@
     flex-direction: column;
     justify-content: flex-start;
     align-items: flex-start;
-    gap: 0.65rem;
-    min-height: 8.25rem;
+    gap: 0.35rem;
+    min-height: 11.5rem;
     border-radius: 16px;
     background: var(--color-surface);
-    padding: 1rem 0.95rem 1.05rem;
-    box-shadow: 0 0 0 1px rgb(31 34 48 / 0.05), 0 8px 20px -14px rgb(31 34 48 / 0.22);
+    padding: 1.25rem 1.2rem 1.35rem;
+    border: 1px solid #ececf1;
+    box-shadow: 0 8px 24px -18px rgb(31 34 48 / 0.45);
     transition:
       transform 180ms var(--ease-out),
       box-shadow 180ms var(--ease-out);
   }
 
   .tool-card:hover {
-    transform: translateY(-3px);
-    box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--color-accent) 40%, transparent),
-      0 16px 32px -16px rgb(31 34 48 / 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 32px -20px rgb(31 34 48 / 0.35);
   }
 
   .drop-zone {
@@ -265,17 +264,19 @@
     height: 36px;
     flex-shrink: 0;
     border-radius: 999px;
-    padding: 0 14px;
-    font-size: 0.84rem;
-    font-weight: 700;
-    color: var(--color-muted);
-    background: transparent;
+    border: 1px solid #e4e4ea;
+    background: #fff;
+    padding: 0 16px;
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--color-fg);
     white-space: nowrap;
   }
 
   .cat-tab[data-active="true"] {
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
+    background: #22232a;
+    border-color: #22232a;
+    color: #fff;
   }
 
   .tint-red,
