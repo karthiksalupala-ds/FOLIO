@@ -63,3 +63,13 @@ export function analyzeColors(data: ArrayLike<number>, width: number, height: nu
   const avg = (k: "r" | "g" | "b") => take.reduce((s, p) => s + p[k], 0) / take.length;
   return { bg: hex(bgR, bgG, bgB), fg: hex(avg("r"), avg("g"), avg("b")) };
 }
+
+/**
+ * Font size that makes `text` as wide as `targetWidth` when drawn at `size`.
+ * `measure(size)` returns the drawn width. The change is limited so a bad measurement can't distort the page.
+ */
+export function fitFontSize(size: number, targetWidth: number, measure: (size: number) => number): number {
+  const w = measure(size);
+  if (!(w > 0) || !(targetWidth > 0)) return size;
+  return size * Math.min(1.15, Math.max(0.6, targetWidth / w));
+}

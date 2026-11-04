@@ -236,6 +236,7 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
   const setColor = useFolio((s) => s.setColor);
   const zoom = useFolio((s) => s.zoom);
   const setZoom = useFolio((s) => s.setZoom);
+  const fitWidth = useFolio((s) => s.fitWidth);
   const pageIndex = useFolio((s) => s.pageIndex);
   const setPage = useFolio((s) => s.setPage);
   const rename = useFolio((s) => s.rename);
@@ -274,7 +275,7 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-bg text-fg">
+    <div className="flex h-dvh w-full max-w-full flex-col overflow-hidden bg-bg text-fg">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2 md:px-3">
         <Button size="icon" variant="ghost" onClick={onHome} aria-label="All tools">
           <ArrowLeft />
@@ -283,12 +284,12 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
           <FolioWordmark compact />
         </div>
         <Input
-          className="h-8 max-w-56 bg-transparent text-sm shadow-none md:max-w-xs"
+          className="h-8 min-w-0 max-w-56 flex-1 bg-transparent text-sm shadow-none md:max-w-xs"
           value={doc.name}
           onChange={(e) => rename(e.target.value)}
           aria-label="Filename"
         />
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 md:gap-1">
           <Button size="icon" variant="ghost" onClick={undo} aria-label="Undo">
             <Undo2 />
           </Button>
@@ -298,8 +299,18 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
           {paginated && (
             <>
               <Button
+                size="sm"
+                variant="ghost"
+                className="px-2 tabular-nums md:hidden"
+                onClick={() => setPagesOpen(true)}
+                aria-label={`Page ${pageIndex + 1} of ${doc.pages.length}. Open pages`}
+              >
+                {pageIndex + 1}/{doc.pages.length}
+              </Button>
+              <Button
                 size="icon"
                 variant="ghost"
+                className="hidden md:inline-flex"
                 onClick={() => setPage(Math.max(0, pageIndex - 1))}
                 aria-label="Previous page"
               >
@@ -311,15 +322,25 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
               <Button
                 size="icon"
                 variant="ghost"
+                className="hidden md:inline-flex"
                 onClick={() => setPage(Math.min(doc.pages.length - 1, pageIndex + 1))}
                 aria-label="Next page"
               >
                 <ChevronRight />
               </Button>
-              <Button size="icon" variant="ghost" onClick={() => setZoom(zoom - 0.1)} aria-label="Zoom out">
+              <Button size="icon" variant="ghost" onClick={() => setZoom(zoom / 1.2)} aria-label="Zoom out">
                 <ZoomOut />
               </Button>
-              <Button size="icon" variant="ghost" onClick={() => setZoom(zoom + 0.1)} aria-label="Zoom in">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="min-w-11 px-1 text-xs tabular-nums md:min-w-14"
+                onClick={fitWidth}
+                aria-label={`Zoom ${Math.round(zoom * 100)} percent. Tap to fit the page to the screen`}
+              >
+                {Math.round(zoom * 100)}%
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => setZoom(zoom * 1.2)} aria-label="Zoom in">
                 <ZoomIn />
               </Button>
             </>
@@ -327,7 +348,7 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
           <Button size="sm" variant="ghost" className="hidden md:inline-flex" onClick={() => setConvertOpen(true)}>
             Convert
           </Button>
-          <Button size="icon" variant="ghost" onClick={() => setShareOpen(true)} aria-label="Share">
+          <Button size="icon" variant="ghost" className="hidden md:inline-flex" onClick={() => setShareOpen(true)} aria-label="Share">
             <Share2 />
           </Button>
           {paginated && (
@@ -347,7 +368,7 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1">
         {paginated && (
           <nav
             aria-label="Editing tools"
@@ -511,6 +532,9 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
             ))}
             <Button size="sm" variant="ghost" className="ml-2 h-11 shrink-0" onClick={() => setConvertOpen(true)}>
               Convert
+            </Button>
+            <Button size="sm" variant="ghost" className="h-11 shrink-0" onClick={() => setShareOpen(true)}>
+              Share
             </Button>
           </div>
         </div>

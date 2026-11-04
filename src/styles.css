@@ -175,10 +175,14 @@
 
   .text-layer-item.is-live:hover,
   .text-layer-item.is-live:focus {
-    color: var(--color-ink);
-    background: rgb(255 255 255 / 0.94);
     outline: 1px solid var(--color-accent);
     z-index: 2;
+  }
+
+  /* While editing, the line is drawn with the sampled colours (inline), so the original text underneath is hidden. */
+  .text-layer-item.is-live:focus {
+    outline-width: 2px;
+    z-index: 3;
   }
 
   .text-layer-item.is-replaced {
