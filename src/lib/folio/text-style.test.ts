@@ -37,3 +37,13 @@ test("fontStyleFrom reads real PDF font names", () => {
   assert.deepEqual(fontStyleFrom("g_d0_f2", "serif"), { font: "serif", bold: false, italic: false });
   assert.equal(fontStyleFrom("Calibri-Light").bold, false);
 });
+
+test("fitFontSize matches the original width within safe limits", async () => {
+  const { fitFontSize } = await import("./text-style.ts");
+  const measure = (sz: number) => sz * 10; // 10 units wide per point
+  assert.equal(fitFontSize(12, 120, measure), 12); // already the right width
+  assert.equal(fitFontSize(12, 108, measure), 10.8); // 10% too wide, so shrink
+  assert.equal(fitFontSize(12, 20, measure), 12 * 0.6); // never shrink more than 40%
+  assert.equal(fitFontSize(12, 900, measure), 12 * 1.15); // never grow more than 15%
+  assert.equal(fitFontSize(12, 100, () => 0), 12); // bad measurement: leave alone
+});

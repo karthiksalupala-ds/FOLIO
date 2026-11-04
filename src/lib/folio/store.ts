@@ -37,6 +37,9 @@ type FolioState = {
   selectedId: string | null;
   pageIndex: number;
   zoom: number;
+  /** While true the page is kept fitted to the width of the screen; any manual zoom turns it off. */
+  fitMode: boolean;
+  fitTick: number;
   query: string;
   past: Snapshot[];
   future: Snapshot[];
@@ -53,7 +56,8 @@ type FolioState = {
   setColor: (color: string) => void;
   setStroke: (n: number) => void;
   setFontSize: (n: number) => void;
-  setZoom: (n: number) => void;
+  setZoom: (n: number, fit?: boolean) => void;
+  fitWidth: () => void;
   setPage: (i: number) => void;
   addAnnot: (a: Annot) => void;
   updateAnnot: (id: string, patch: Partial<Annot>) => void;
@@ -96,7 +100,9 @@ export const useFolio = create<FolioState>((set, get) => ({
   stamp: "approved",
   selectedId: null,
   pageIndex: 0,
-  zoom: 1.25,
+  zoom: 1,
+  fitMode: true,
+  fitTick: 0,
   query: "",
   past: [],
   future: [],
@@ -130,6 +136,8 @@ export const useFolio = create<FolioState>((set, get) => ({
       past: [],
       future: [],
       zoom: doc.kind === "pdf" || doc.kind === "image" ? 1.15 : 1,
+      fitMode: true,
+      fitTick: get().fitTick + 1,
     });
     return doc;
   },
@@ -181,7 +189,8 @@ export const useFolio = create<FolioState>((set, get) => ({
   setColor: (color) => set({ color }),
   setStroke: (strokeWidth) => set({ strokeWidth }),
   setFontSize: (fontSize) => set({ fontSize }),
-  setZoom: (zoom) => set({ zoom: Math.min(2.6, Math.max(0.4, zoom)) }),
+  setZoom: (zoom, fit = false) => set({ zoom: Math.min(4, Math.max(0.15, zoom)), fitMode: fit }),
+  fitWidth: () => set((st) => ({ fitMode: true, fitTick: st.fitTick + 1 })),
   setPage: (pageIndex) => set({ pageIndex, selectedId: null }),
 
   addAnnot: (a) => {

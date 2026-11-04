@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { analyzeColors, type FontLook } from "@/lib/folio/text-style";
+import { analyzeColors, fitFontSize } from "@/lib/folio/text-style";
+import { groupLines, type TextLine } from "@/lib/folio/lines";
 import { Spinner } from "@/components/folio/loading";
 import { uid } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,13 @@ export function PdfStage({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  const [boxW, setBoxW] = useState(0);
+  const fitMode = useFolio((s) => s.fitMode);
+  const fitTick = useFolio((s) => s.fitTick);
+  // Where the visible area sits inside the page, so zooming keeps the same spot in view.
+  const rel = useRef({ x: 0.5, y: 0, ax: 0.5, ay: 0 });
   const [pdf, setPdf] = useState<PdfDocProxy | null>(null);
   const [size, setSize] = useState({ w: 612, h: 792 });
   const [items, setItems] = useState<TextItem[]>([]);
@@ -94,11 +102,24 @@ export function PdfStage({
   useEffect(() => {
     if (!pdf || !canvasRef.current || !pageMeta) return;
     let cancelled = false;
+    let refit = false;
     setBusy(true);
     (async () => {
       try {
         const page = await pdf.getPage(pageMeta.source + 1);
         if (cancelled) return;
+        const nat = page.getViewport({ scale: 1, rotation: pageMeta.rotation });
+        setNatural({ w: nat.width, h: nat.height });
+        const st = useFolio.getState();
+        if (st.fitMode && scrollRef.current) {
+          // Pick the zoom that fits the screen before drawing, so the page isn't rendered twice.
+          const z = fitZoomFor(scrollRef.current, nat.width);
+          if (Math.abs(z - st.zoom) > 0.01) {
+            refit = true;
+            st.setZoom(z, true);
+            return;
+          }
+        }
         const { width, height } = await renderPageToCanvas(
           page,
           canvasRef.current!,
@@ -113,13 +134,53 @@ export function PdfStage({
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Render failed");
       } finally {
-        if (!cancelled) setBusy(false);
+        if (!cancelled && !refit) setBusy(false);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [pdf, pageMeta, zoom, pageIndex]);
+
+  // Keep the page fitted to the screen (rotation, window resize, "fit width" button).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBoxW(el.clientWidth));
+    ro.observe(el);
+    setBoxW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!fitMode || !natural || !el) return;
+    const z = fitZoomFor(el, natural.w);
+    if (Math.abs(z - useFolio.getState().zoom) > 0.01) {
+      rel.current = { x: 0.5, y: 0, ax: 0.5, ay: 0 };
+      useFolio.getState().setZoom(z, true);
+    }
+  }, [fitMode, fitTick, natural, boxW]);
+
+  // After the page is redrawn at a new size, put the same part of it back in view.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = rel.current.x * el.scrollWidth - rel.current.ax * el.clientWidth;
+    el.scrollTop = rel.current.y * el.scrollHeight - rel.current.ay * el.clientHeight;
+  }, [size.w, size.h]);
+
+  useEffect(() => {
+    rel.current = { x: 0.5, y: 0, ax: 0.5, ay: 0 };
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [pageIndex]);
+
+  useStageGestures(scrollRef, wrapRef, rel, () => {
+    tap.current = null;
+    drag.current = null;
+    setDraft(null);
+    setInk(null);
+  });
 
   function norm(e: React.PointerEvent) {
     const r = wrapRef.current!.getBoundingClientRect();
@@ -349,9 +410,23 @@ export function PdfStage({
   const lines = useMemo(() => groupLines(items), [items]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center overflow-auto p-4 md:p-8">
+    <div
+      ref={scrollRef}
+      // pan-x pan-y: the browser keeps one-finger scrolling, but pinch is ours (see useStageGestures)
+      style={{ touchAction: "pan-x pan-y" }}
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-auto p-3 md:p-8"
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        rel.current = {
+          x: (el.scrollLeft + el.clientWidth / 2) / el.scrollWidth,
+          y: (el.scrollTop + el.clientHeight / 2) / el.scrollHeight,
+          ax: 0.5,
+          ay: 0.5,
+        };
+      }}
+    >
       {(tool === "text" || tool === "textbox") && (
-        <p className="mb-3 max-w-lg rounded-lg bg-surface px-3 py-2 text-center text-xs leading-relaxed text-muted shadow-[var(--shadow-paper)]">
+        <p className="sticky left-0 mx-auto mb-3 max-w-lg shrink-0 rounded-lg bg-surface px-3 py-2 text-center text-xs leading-relaxed text-muted shadow-[var(--shadow-paper)]">
           {tool === "textbox"
             ? "Tap the page where you want to add text."
             : lines.length > 0
@@ -367,7 +442,7 @@ export function PdfStage({
       <div
         ref={wrapRef}
         className={cn(
-          "relative shrink-0 shadow-[var(--shadow-paper)]",
+          "relative mx-auto shrink-0 shadow-[var(--shadow-paper)]",
           tool === "select" ? "cursor-default" : tool === "text" || tool === "textbox" ? "cursor-text" : "cursor-crosshair",
         )}
         style={{ width: size.w, height: size.h, touchAction: DRAW_TOOLS.includes(tool) ? "none" : "auto" }}
@@ -401,7 +476,8 @@ export function PdfStage({
                 replaced={!!repl}
                 look={repl && repl.type === "replace" ? repl : undefined}
                 editable={tool === "text"}
-                onCommit={(next) => {
+                getColors={() => sampleLine(canvasRef.current, line)}
+                onCommit={(next, fontPx) => {
                   if (repl && repl.type === "replace") {
                     if (next !== repl.text) updateAnnot(repl.id, { text: next } as Partial<Annot>);
                     return;
@@ -417,7 +493,7 @@ export function PdfStage({
                     w: Math.max(line.nw, 0.04),
                     h: line.nh,
                     text: next,
-                    fontSize: Math.max(8, line.fontSize / zoom),
+                    fontSize: Math.max(6, (fontPx ?? line.fontSize) / zoom),
                     color: colors?.fg ?? "#1c1917",
                     bg: colors?.bg ?? "#ffffff",
                     font: line.look?.font,
@@ -643,21 +719,6 @@ function AnnotShape({ a, selected }: { a: Annot; selected: boolean }) {
   return null;
 }
 
-type TextLine = {
-  id: string;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  fontSize: number;
-  text: string;
-  nx: number;
-  ny: number;
-  nw: number;
-  nh: number;
-  look?: FontLook;
-};
-
 const CSS_FONTS = {
   sans: 'Helvetica, Arial, "Nimbus Sans", sans-serif',
   serif: '"Times New Roman", Times, "Nimbus Roman", serif',
@@ -682,58 +743,6 @@ function sampleLine(canvas: HTMLCanvasElement | null, line: TextLine) {
   }
 }
 
-function groupLines(items: TextItem[]): TextLine[] {
-  if (!items.length) return [];
-  const sample = items.find((it) => it.nw > 0.002) ?? items[0];
-  const vw = sample.nw > 0.002 ? sample.width / sample.nw : 1;
-  const vh = sample.nh > 0.002 ? sample.height / sample.nh : 1;
-  const sorted = [...items].sort((a, b) => a.top - b.top || a.left - b.left);
-  const lines: Array<TextLine & { right: number }> = [];
-  for (const it of sorted) {
-    const last = lines[lines.length - 1];
-    const same =
-      last &&
-      Math.abs(last.top + last.height / 2 - (it.top + it.height / 2)) < Math.max(3, it.fontSize * 0.45);
-    if (last && same) {
-      if (it.left > last.right + 1.2 && !last.text.endsWith(" ") && !it.str.startsWith(" ")) last.text += " ";
-      last.text += it.str;
-      last.right = Math.max(last.right, it.left + it.width);
-      last.width = Math.max(8, last.right - last.left);
-      last.height = Math.max(last.height, it.height, it.fontSize);
-      last.fontSize = Math.max(last.fontSize, it.fontSize);
-      continue;
-    }
-    lines.push({
-      id: `ln_${lines.length}_${Math.round(it.left)}_${Math.round(it.top)}`,
-      left: it.left,
-      top: it.top,
-      width: Math.max(it.width, 8),
-      height: Math.max(it.height, it.fontSize, 10),
-      fontSize: it.fontSize || 12,
-      text: it.str,
-      look: it.look,
-      right: it.left + Math.max(it.width, 8),
-      nx: 0,
-      ny: 0,
-      nw: 0,
-      nh: 0,
-    });
-  }
-  return lines.map((l) => ({
-    id: l.id,
-    left: l.left,
-    top: l.top,
-    width: l.width,
-    height: l.height,
-    fontSize: l.fontSize,
-    text: l.text,
-    look: l.look,
-    nx: l.left / vw,
-    ny: Math.max(0, (l.top - l.fontSize * 0.15) / vh),
-    nw: l.width / vw,
-    nh: (l.height * 1.35) / vh,
-  }));
-}
 
 function covers(a: Annot, line: TextLine) {
   if (a.type !== "replace") return false;
@@ -742,12 +751,26 @@ function covers(a: Annot, line: TextLine) {
   return cx >= a.x - 0.012 && cx <= a.x + a.w + 0.012 && cy >= a.y - 0.012 && cy <= a.y + a.h + 0.012;
 }
 
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+
+/** Font size that makes the original line text exactly as wide as it was in the PDF. */
+function fitSizeFor(line: TextLine, family: string, bold: boolean, italic: boolean): number {
+  if (measureCtx === undefined) measureCtx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+  const ctx = measureCtx;
+  if (!ctx) return line.fontSize;
+  return fitFontSize(line.fontSize, line.width, (sz) => {
+    ctx.font = `${italic ? "italic " : ""}${bold ? 700 : 400} ${sz}px ${family}`;
+    return ctx.measureText(line.text).width;
+  });
+}
+
 function LineEdit({
   line,
   text,
   replaced,
   look,
   editable,
+  getColors,
   onCommit,
 }: {
   line: TextLine;
@@ -755,38 +778,48 @@ function LineEdit({
   replaced: boolean;
   look?: { color: string; bg?: string; font?: "sans" | "serif" | "mono"; bold?: boolean; italic?: boolean };
   editable: boolean;
-  onCommit: (next: string) => void;
+  getColors: () => { bg: string; fg: string } | null;
+  onCommit: (next: string, fontPx: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [live, setLive] = useState<{ bg: string; fg: string } | null>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el || document.activeElement === el) return;
     if (el.textContent !== text) el.textContent = text;
   }, [text]);
+
+  const family = CSS_FONTS[look?.font ?? line.look?.font ?? "sans"];
+  const bold = look?.bold ?? line.look?.bold ?? false;
+  const italic = look?.italic ?? line.look?.italic ?? false;
+  const fitted = useMemo(
+    () => fitSizeFor(line, family, bold, italic),
+    [line, family, bold, italic],
+  );
+
+  // While editing (or once edited) draw the text the way the page draws it: same ink, same background,
+  // same kind of font and width, so the original underneath is fully covered.
+  const colours = look ? { fg: look.color, bg: look.bg ?? "#ffffff" } : live;
   return (
     <div
       ref={ref}
-      className={cn(
-        "text-layer-item",
-        editable && "pointer-events-auto is-live",
-        replaced && "is-replaced",
-      )}
+      className={cn("text-layer-item", editable && "pointer-events-auto is-live", replaced && "is-replaced")}
       contentEditable={editable}
       suppressContentEditableWarning
       spellCheck={false}
       style={{
         left: line.left - 2,
         top: line.top - 2,
-        fontSize: line.fontSize,
+        fontSize: colours ? fitted : line.fontSize,
         width: Math.max(line.width + 8, 24),
         minHeight: Math.max(line.height + 4, line.fontSize + 4),
-        ...(look
+        ...(colours
           ? {
-              color: look.color,
-              background: look.bg ?? "#fff",
-              fontFamily: CSS_FONTS[look.font ?? "sans"],
-              fontWeight: look.bold ? 700 : 400,
-              fontStyle: look.italic ? "italic" : "normal",
+              color: colours.fg,
+              background: colours.bg,
+              fontFamily: family,
+              fontWeight: bold ? 700 : 400,
+              fontStyle: italic ? "italic" : "normal",
             }
           : {}),
       }}
@@ -795,6 +828,7 @@ function LineEdit({
       }}
       onFocus={(e) => {
         const el = e.currentTarget;
+        setLive(getColors() ?? { bg: "#ffffff", fg: "#1c1917" });
         requestAnimationFrame(() => {
           const sel = window.getSelection();
           if (!sel || document.activeElement !== el) return;
@@ -804,9 +838,119 @@ function LineEdit({
           sel.addRange(range);
         });
       }}
-      onBlur={(e) => onCommit(e.currentTarget.textContent ?? "")}
+      onBlur={(e) => {
+        setLive(null);
+        onCommit(e.currentTarget.textContent ?? "", fitted);
+      }}
     />
   );
+}
+
+/** The zoom at which a page of `naturalWidth` points exactly fills the scroll area (never above 150%). */
+function fitZoomFor(el: HTMLElement, naturalWidth: number): number {
+  const cs = getComputedStyle(el);
+  const avail = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  return Math.min(1.5, Math.max(0.15, avail / naturalWidth));
+}
+
+/**
+ * Pinch to zoom on touch screens and Ctrl/Cmd + wheel (trackpad pinch) on desktop.
+ * During a pinch the page is scaled with a cheap CSS transform; the sharp re-render happens once on release.
+ */
+function useStageGestures(
+  scrollRef: React.RefObject<HTMLDivElement | null>,
+  wrapRef: React.RefObject<HTMLDivElement | null>,
+  rel: React.MutableRefObject<{ x: number; y: number; ax: number; ay: number }>,
+  cancelDraw: () => void,
+) {
+  const cancelRef = useRef(cancelDraw);
+  cancelRef.current = cancelDraw;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const pts = new Map<number, { x: number; y: number }>();
+    let start: { dist: number; zoom: number; mx: number; my: number } | null = null;
+    let ratio = 1;
+    const two = () => [...pts.values()] as [{ x: number; y: number }, { x: number; y: number }];
+    const dist = () => {
+      const [a, b] = two();
+      return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    };
+    const clampRatio = (z0: number, r: number) => Math.min(4 / z0, Math.max(0.15 / z0, r));
+
+    const anchorAt = (mx: number, my: number) => {
+      const box = el.getBoundingClientRect();
+      rel.current = {
+        x: (el.scrollLeft + (mx - box.left)) / el.scrollWidth,
+        y: (el.scrollTop + (my - box.top)) / el.scrollHeight,
+        ax: (mx - box.left) / el.clientWidth,
+        ay: (my - box.top) / el.clientHeight,
+      };
+    };
+
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        cancelRef.current(); // a second finger means "zoom", so drop any stroke the first one started
+        const [a, b] = two();
+        start = { dist: dist(), zoom: useFolio.getState().zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+        ratio = 1;
+        const wrap = wrapRef.current;
+        if (wrap) {
+          const r = wrap.getBoundingClientRect();
+          wrap.style.transformOrigin = `${start.mx - r.left}px ${start.my - r.top}px`;
+          wrap.style.willChange = "transform";
+        }
+      }
+      if (pts.size >= 2) e.stopPropagation();
+    };
+    const move = (e: PointerEvent) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (start && pts.size === 2) {
+        e.stopPropagation();
+        ratio = clampRatio(start.zoom, dist() / start.dist);
+        if (wrapRef.current) wrapRef.current.style.transform = `scale(${ratio})`;
+      }
+    };
+    const up = (e: PointerEvent) => {
+      if (!pts.delete(e.pointerId)) return;
+      if (start && pts.size < 2) {
+        const s0 = start;
+        start = null;
+        const wrap = wrapRef.current;
+        if (wrap) {
+          wrap.style.transform = "";
+          wrap.style.willChange = "";
+        }
+        if (Math.abs(ratio - 1) > 0.02) {
+          anchorAt(s0.mx, s0.my);
+          useFolio.getState().setZoom(s0.zoom * ratio);
+        }
+        e.stopPropagation();
+      }
+    };
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const z0 = useFolio.getState().zoom;
+      anchorAt(e.clientX, e.clientY);
+      useFolio.getState().setZoom(z0 * Math.exp(-e.deltaY * 0.0025));
+    };
+    el.addEventListener("pointerdown", down, true);
+    el.addEventListener("pointermove", move, true);
+    el.addEventListener("pointerup", up, true);
+    el.addEventListener("pointercancel", up, true);
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      el.removeEventListener("pointerdown", down, true);
+      el.removeEventListener("pointermove", move, true);
+      el.removeEventListener("pointerup", up, true);
+      el.removeEventListener("pointercancel", up, true);
+      el.removeEventListener("wheel", wheel);
+    };
+  }, [scrollRef, wrapRef, rel]);
 }
 
 /** Tools that need the finger/pen to draw, so the browser must not treat the drag as a scroll. */
