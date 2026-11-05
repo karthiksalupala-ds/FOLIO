@@ -1,4 +1,5 @@
 import { RouteProgress } from "@/components/folio/loading";
+import { SplashScreen } from "@/components/folio/splash-screen";
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
@@ -48,7 +49,9 @@ export const Route = createRootRoute({
         <RouteProgress />
         <AuthProvider>
           <TooltipProvider delayDuration={280}>
-            <Outlet />
+            <SplashScreen>
+              <Outlet />
+            </SplashScreen>
             <Toaster />
           </TooltipProvider>
         </AuthProvider>
