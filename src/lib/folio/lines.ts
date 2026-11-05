@@ -25,11 +25,22 @@ export function groupLines(items: TextItem[]): TextLine[] {
   const sorted = [...items].sort((a, b) => a.top - b.top || a.left - b.left);
   const lines: Array<TextLine & { right: number }> = [];
   for (const it of sorted) {
-    const last = lines[lines.length - 1];
-    const same =
-      last &&
-      Math.abs(last.top + last.height / 2 - (it.top + it.height / 2)) < Math.max(3, it.fontSize * 0.45);
-    if (last && same) {
+    // Find a line this word continues: same baseline AND right next to the end of that line.
+    // Words far apart on the same row are separate columns (cards, table cells), not one sentence.
+    let target: (typeof lines)[number] | undefined;
+    for (let k = lines.length - 1; k >= 0 && k >= lines.length - 40; k--) {
+      const l = lines[k];
+      const sameRow = Math.abs(l.top + l.height / 2 - (it.top + it.height / 2)) < Math.max(3, it.fontSize * 0.45);
+      if (!sameRow) continue;
+      const gap = it.left - l.right;
+      const maxGap = Math.max(it.fontSize * 0.9, 6);
+      if (gap <= maxGap && gap >= -it.fontSize * 0.5) {
+        target = l;
+        break;
+      }
+    }
+    if (target) {
+      const last = target;
       if (it.left > last.right + 1.2 && !last.text.endsWith(" ") && !it.str.startsWith(" ")) last.text += " ";
       last.text += it.str;
       last.right = Math.max(last.right, it.left + it.width);

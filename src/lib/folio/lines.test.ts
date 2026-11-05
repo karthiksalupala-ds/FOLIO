@@ -38,3 +38,21 @@ test("lines in different columns do not limit each other", () => {
   const left = lines.find((l) => l.text === "Left")!;
   assert.ok(left.nh * H > 12 * 1.3);
 });
+
+test("words in separate columns on the same row stay separate lines", () => {
+  // Three cards side by side: each card's sentence must be its own editable line.
+  const items = [
+    item("Split the array", 40, 300, 90),
+    item("into two halves", 134, 300, 95),
+    item("Recursively sort", 260, 300, 100),
+    item("each half", 364, 301, 55),
+    item("Merge two sorted", 480, 300, 105),
+  ];
+  const lines = groupLines(items as never);
+  assert.deepEqual(lines.map((l) => l.text), ["Split the array into two halves", "Recursively sort each half", "Merge two sorted"]);
+});
+
+test("a wide gap inside a row is a column break, a normal space is not", () => {
+  assert.equal(groupLines([item("one", 40, 100, 20), item("two", 64, 100, 20)] as never).length, 1);
+  assert.equal(groupLines([item("one", 40, 100, 20), item("two", 200, 100, 20)] as never).length, 2);
+});

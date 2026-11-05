@@ -134,6 +134,8 @@ export type Annot =
       color: string;
       /** Background colour sampled from the page under the original line. */
       bg?: string;
+      /** Embedded-font name from the original page (only valid while the document stays open). */
+      cssFont?: string;
       font?: "sans" | "serif" | "mono";
       bold?: boolean;
       italic?: boolean;

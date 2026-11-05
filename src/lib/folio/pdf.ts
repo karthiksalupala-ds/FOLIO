@@ -63,19 +63,49 @@ export async function extractPageText(
   const content = await page.getTextContent();
   const items: TextItem[] = [];
   const looks = new Map<string, FontLook>();
+  type LoadedFont = { name?: string; bold?: boolean; italic?: boolean; black?: boolean; loadedName?: string; fallbackName?: string };
+  const loaded = new Map<string, LoadedFont | null>();
+  // Ask pdf.js for the real font objects (it knows the true name and bold/italic flags once fonts are loaded).
+  const fontNames = new Set<string>();
+  for (const raw of content.items) {
+    const fn = (raw as { fontName?: string }).fontName;
+    if (fn) fontNames.add(fn);
+  }
+  if (fontNames.size) {
+    try {
+      await page.getOperatorList(); // makes sure the page's fonts are requested
+    } catch {
+      /* fall back to name heuristics */
+    }
+    for (const fn of fontNames) {
+      const font = await new Promise<LoadedFont | null>((resolve) => {
+        const timer = setTimeout(() => resolve(null), 1200);
+        try {
+          page.commonObjs.get(fn, (obj: unknown) => {
+            clearTimeout(timer);
+            resolve((obj as LoadedFont) ?? null);
+          });
+        } catch {
+          clearTimeout(timer);
+          resolve(null);
+        }
+      });
+      loaded.set(fn, font);
+    }
+  }
   const lookFor = (fontName: string | undefined): FontLook | undefined => {
     if (!fontName) return undefined;
     let l = looks.get(fontName);
     if (!l) {
-      let real: string | undefined;
-      try {
-        // After the page is rendered pdf.js knows the real font name (e.g. "ABCDEF+Arial-BoldMT").
-        if (page.commonObjs.has(fontName)) real = (page.commonObjs.get(fontName) as { name?: string } | null)?.name;
-      } catch {
-        real = undefined;
-      }
+      const f = loaded.get(fontName) ?? null;
       const css = (content.styles as Record<string, { fontFamily?: string } | undefined>)[fontName]?.fontFamily;
-      l = fontStyleFrom(real ?? fontName, css);
+      const guess = fontStyleFrom(f?.name ?? fontName, `${f?.fallbackName ?? ""} ${css ?? ""}`);
+      l = {
+        ...guess,
+        bold: guess.bold || !!f?.bold || !!f?.black,
+        italic: guess.italic || !!f?.italic,
+        css: f?.loadedName,
+      };
       looks.set(fontName, l);
     }
     return l;

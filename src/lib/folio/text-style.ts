@@ -1,16 +1,31 @@
 // Pure helpers used to make edited text look like the text it replaces.
 
 export type FontFamily = "sans" | "serif" | "mono";
-export type FontLook = { font: FontFamily; bold: boolean; italic: boolean };
+export type FontLook = {
+  font: FontFamily;
+  bold: boolean;
+  italic: boolean;
+  /** Name pdf.js registered the PDF's embedded font under, so the browser can draw the exact original glyphs. */
+  css?: string;
+};
 
-/** Guess family / weight / slant from a PDF font name such as "ABCDEF+Arial-BoldMT" or a CSS family. */
+function classifyFamily(text: string): FontFamily | null {
+  const n = text.toLowerCase();
+  if (/courier|mono|consolas|menlo|lucida console|typewriter/.test(n)) return "mono";
+  // "serif" counts, but "sans-serif" does not
+  if (/(?<!sans[-_ ]?)serif|times|georgia|garamond|palatino|cambria|minion|book antiqua|century|baskerville|didot/.test(n)) return "serif";
+  if (/sans|arial|helvet|calibri|verdana|tahoma|roboto|segoe|inter\b|open sans|gothic|futura|poppins|nunito|montserrat|lato/.test(n)) return "sans";
+  return null;
+}
+
+/**
+ * Guess family / weight / slant from a PDF font name such as "ABCDEF+Arial-BoldMT".
+ * The name wins; the generic CSS family ("serif", "sans-serif") is only a fallback when the name says nothing.
+ */
 export function fontStyleFrom(name?: string, cssFamily?: string): FontLook {
   const n = `${name ?? ""} ${cssFamily ?? ""}`.toLowerCase();
-  const mono = /courier|mono|consolas|menlo|lucida console|typewriter/.test(n);
-  const sans = /sans|arial|helvet|calibri|verdana|tahoma|roboto|segoe|inter|noto sans|open sans|gothic|futura/.test(n);
-  const serif = !sans && /serif|times|georgia|garamond|palatino|cambria|minion|book antiqua|century|baskerville|didot/.test(n);
   return {
-    font: mono ? "mono" : serif ? "serif" : "sans",
+    font: classifyFamily(name ?? "") ?? classifyFamily(cssFamily ?? "") ?? "sans",
     bold: /bold|black|heavy|semibold|demi(?!-?light)|extrabold/.test(n),
     italic: /italic|oblique|-it\b|ital\b/.test(n),
   };

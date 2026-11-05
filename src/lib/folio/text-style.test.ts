@@ -36,6 +36,10 @@ test("fontStyleFrom reads real PDF font names", () => {
   assert.deepEqual(fontStyleFrom("g_d0_f1", "sans-serif"), { font: "sans", bold: false, italic: false });
   assert.deepEqual(fontStyleFrom("g_d0_f2", "serif"), { font: "serif", bold: false, italic: false });
   assert.equal(fontStyleFrom("Calibri-Light").bold, false);
+  // the real name beats a generic css fallback
+  assert.deepEqual(fontStyleFrom("DejaVuSerif-Bold-7572", "sans-serif"), { font: "serif", bold: true, italic: false });
+  assert.deepEqual(fontStyleFrom("Poppins-Bold-9750", "sans-serif"), { font: "sans", bold: true, italic: false });
+  assert.deepEqual(fontStyleFrom("g_d0_f9", "monospace"), { font: "mono", bold: false, italic: false });
 });
 
 test("fitFontSize matches the original width within safe limits", async () => {

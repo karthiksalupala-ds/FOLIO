@@ -497,6 +497,7 @@ export function PdfStage({
                     color: colors?.fg ?? "#1c1917",
                     bg: colors?.bg ?? "#ffffff",
                     font: line.look?.font,
+                    cssFont: line.look?.css,
                     bold: line.look?.bold,
                     italic: line.look?.italic,
                   });
@@ -776,7 +777,7 @@ function LineEdit({
   line: TextLine;
   text: string;
   replaced: boolean;
-  look?: { color: string; bg?: string; font?: "sans" | "serif" | "mono"; bold?: boolean; italic?: boolean };
+  look?: { color: string; bg?: string; cssFont?: string; font?: "sans" | "serif" | "mono"; bold?: boolean; italic?: boolean };
   editable: boolean;
   getColors: () => { bg: string; fg: string } | null;
   onCommit: (next: string, fontPx: number) => void;
@@ -789,7 +790,10 @@ function LineEdit({
     if (el.textContent !== text) el.textContent = text;
   }, [text]);
 
-  const family = CSS_FONTS[look?.font ?? line.look?.font ?? "sans"];
+  const generic = CSS_FONTS[look?.font ?? line.look?.font ?? "sans"];
+  const embedded = look?.cssFont ?? line.look?.css;
+  // The PDF's own font first (exact glyphs), then a close system font for letters the PDF never used.
+  const family = embedded ? `"${embedded}", ${generic}` : generic;
   const bold = look?.bold ?? line.look?.bold ?? false;
   const italic = look?.italic ?? line.look?.italic ?? false;
   const fitted = useMemo(
