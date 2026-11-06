@@ -62,6 +62,7 @@ export type Annot =
       text: string;
       color: string;
       fontSize: number;
+      font?: "sans" | "serif" | "mono";
       bold?: boolean;
       italic?: boolean;
       align?: "left" | "center" | "right";

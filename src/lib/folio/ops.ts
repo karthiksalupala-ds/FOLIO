@@ -783,7 +783,7 @@ async function scannedOcr(file: JobFile, onProgress: ProgressFn): Promise<JobRes
       onProgress(30 + ((i - 1) / js.numPages) * 65, `Recognising page ${i} of ${js.numPages}`);
       const page = await js.getPage(i);
       const canvas = document.createElement("canvas");
-      await renderPageToCanvas(page, canvas, scale, 0);
+      await renderPageToCanvas(page, canvas, scale, 0, 1);
       const { data } = await worker.recognize(canvas, {}, { blocks: true });
       const jpg = await canvasToJpeg(canvas, 0.85);
       const img = await out.embedJpg(new Uint8Array(await jpg.arrayBuffer()));

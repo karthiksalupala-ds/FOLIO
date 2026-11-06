@@ -477,6 +477,7 @@ export function PdfStage({
                 look={repl && repl.type === "replace" ? repl : undefined}
                 editable={tool === "text"}
                 getColors={() => sampleLine(canvasRef.current, line)}
+                onFocusLine={() => repl && select(repl.id)}
                 onCommit={(next, fontPx) => {
                   if (repl && repl.type === "replace") {
                     if (next !== repl.text) updateAnnot(repl.id, { text: next } as Partial<Annot>);
@@ -484,8 +485,9 @@ export function PdfStage({
                   }
                   if (next === line.text) return;
                   const colors = sampleLine(canvasRef.current, line);
+                  const newId = uid("a");
                   addAnnot({
-                    id: uid("a"),
+                    id: newId,
                     page: pageIndex,
                     type: "replace",
                     x: line.nx,
@@ -501,6 +503,7 @@ export function PdfStage({
                     bold: line.look?.bold,
                     italic: line.look?.italic,
                   });
+                  select(newId); // so the style controls (font, bold, italic, colour, size) appear for it
                 }}
               />
             );
@@ -557,7 +560,8 @@ export function PdfStage({
                   height: `${a.h * 100}%`,
                   fontSize: a.fontSize * zoom * 0.85,
                   color: a.color,
-                  fontWeight: a.bold ? 600 : 400,
+                  fontFamily: CSS_FONTS[a.font ?? "sans"],
+                  fontWeight: a.bold ? 700 : 400,
                   fontStyle: a.italic ? "italic" : "normal",
                   textAlign: a.align,
                 }}
@@ -772,6 +776,7 @@ function LineEdit({
   look,
   editable,
   getColors,
+  onFocusLine,
   onCommit,
 }: {
   line: TextLine;
@@ -780,6 +785,7 @@ function LineEdit({
   look?: { color: string; bg?: string; cssFont?: string; font?: "sans" | "serif" | "mono"; bold?: boolean; italic?: boolean };
   editable: boolean;
   getColors: () => { bg: string; fg: string } | null;
+  onFocusLine?: () => void;
   onCommit: (next: string, fontPx: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -791,7 +797,13 @@ function LineEdit({
   }, [text]);
 
   const generic = CSS_FONTS[look?.font ?? line.look?.font ?? "sans"];
-  const embedded = look?.cssFont ?? line.look?.css;
+  // If the user picked a different font / weight / slant, the PDF's own font no longer applies.
+  const sameStyle =
+    !look ||
+    ((look.font ?? line.look?.font) === line.look?.font &&
+      !!look.bold === !!line.look?.bold &&
+      !!look.italic === !!line.look?.italic);
+  const embedded = sameStyle ? (look?.cssFont ?? line.look?.css) : undefined;
   // The PDF's own font first (exact glyphs), then a close system font for letters the PDF never used.
   const family = embedded ? `"${embedded}", ${generic}` : generic;
   const bold = look?.bold ?? line.look?.bold ?? false;
@@ -832,6 +844,7 @@ function LineEdit({
       }}
       onFocus={(e) => {
         const el = e.currentTarget;
+        onFocusLine?.();
         setLive(getColors() ?? { bg: "#ffffff", fg: "#1c1917" });
         requestAnimationFrame(() => {
           const sel = window.getSelection();

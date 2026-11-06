@@ -603,6 +603,12 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
   );
 }
 
+const FONT_CHOICES = [
+  { id: "sans", label: "Sans", css: "Helvetica, Arial, sans-serif" },
+  { id: "serif", label: "Serif", css: '"Times New Roman", Times, serif' },
+  { id: "mono", label: "Mono", css: '"Courier New", monospace' },
+] as const;
+
 const SWATCHES = Array.from(new Set([...INK_COLORS, ...MARK_COLORS.map((c) => c.value), "#d93025", "#1a73e8", "#188038"]));
 
 type AnyPatch = Partial<Annot>;
@@ -705,6 +711,26 @@ function Inspector() {
               else setFontSize(n);
             }}
           />
+        </div>
+      )}
+
+      {a && isText && (
+        <div>
+          <p className="mb-1.5 text-[11px] text-subtle">Font</p>
+          <div className="grid grid-cols-3 gap-1">
+            {FONT_CHOICES.map((f) => (
+              <Button
+                key={f.id}
+                size="sm"
+                variant={(("font" in a && a.font) || "sans") === f.id ? "default" : "secondary"}
+                style={{ fontFamily: f.css }}
+                aria-pressed={(("font" in a && a.font) || "sans") === f.id}
+                onClick={() => patch({ font: f.id } as AnyPatch)}
+              >
+                {f.label}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -830,6 +856,37 @@ function SelectionBar() {
         ))}
       {isText && (
         <>
+          {FONT_CHOICES.map((f) => (
+            <Button
+              key={f.id}
+              size="sm"
+              variant={(("font" in a && a.font) || "sans") === f.id ? "default" : "secondary"}
+              className="h-9 shrink-0 px-2.5"
+              style={{ fontFamily: f.css }}
+              aria-label={`${f.label} font`}
+              onClick={() => updateAnnot(a.id, { font: f.id } as AnyPatch)}
+            >
+              {f.label}
+            </Button>
+          ))}
+          <Button
+            size="icon"
+            variant={"bold" in a && a.bold ? "default" : "secondary"}
+            className="size-9 shrink-0"
+            aria-label="Bold"
+            onClick={() => updateAnnot(a.id, { bold: !("bold" in a && a.bold) } as AnyPatch)}
+          >
+            <Bold />
+          </Button>
+          <Button
+            size="icon"
+            variant={"italic" in a && a.italic ? "default" : "secondary"}
+            className="size-9 shrink-0"
+            aria-label="Italic"
+            onClick={() => updateAnnot(a.id, { italic: !("italic" in a && a.italic) } as AnyPatch)}
+          >
+            <Italic />
+          </Button>
           <Button size="icon" variant="secondary" className="size-9 shrink-0" aria-label="Smaller text" onClick={() => updateAnnot(a.id, { fontSize: Math.max(6, a.fontSize - 2) } as AnyPatch)}>
             <Minus />
           </Button>

@@ -164,23 +164,35 @@ export async function pagePlainText(page: PdfPageProxy): Promise<string> {
   return parts.join("\n");
 }
 
+/** Pixel ratio for sharp canvases: the screen's density, capped so huge pages don't exhaust memory. */
+function sharpRatio(cssWidth: number, cssHeight: number, wanted?: number): number {
+  const dpr = wanted ?? (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
+  const maxPixels = 24_000_000;
+  const byMemory = Math.sqrt(maxPixels / Math.max(1, cssWidth * cssHeight));
+  return Math.max(1, Math.min(dpr, 3, byMemory));
+}
+
 export async function renderPageToCanvas(
   page: PdfPageProxy,
   canvas: HTMLCanvasElement,
   scale: number,
   rotation: number,
+  pixelRatio?: number,
 ): Promise<{ width: number; height: number }> {
   const viewport = page.getViewport({ scale, rotation });
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas unavailable");
-  canvas.width = Math.ceil(viewport.width);
-  canvas.height = Math.ceil(viewport.height);
+  // Draw at the screen's real pixel density so text stays crisp on phones (CSS size stays the same).
+  const ratio = sharpRatio(viewport.width, viewport.height, pixelRatio);
+  canvas.width = Math.ceil(viewport.width * ratio);
+  canvas.height = Math.ceil(viewport.height * ratio);
   canvas.style.width = `${viewport.width}px`;
   canvas.style.height = `${viewport.height}px`;
   const task = page.render({
     canvas,
     canvasContext: ctx,
     viewport,
+    transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
   });
   await task.promise;
   return { width: viewport.width, height: viewport.height };
@@ -437,8 +449,8 @@ async function drawAnnot(
       const font =
         a.type === "replace"
           ? await standardFont(pdf, a.font ?? "sans", !!a.bold, !!a.italic)
-          : a.type === "text" && a.bold
-            ? fonts.helvBold
+          : a.type === "text"
+            ? await standardFont(pdf, a.font ?? "sans", !!a.bold, !!a.italic)
             : fonts.helv;
       const size = a.fontSize;
       const lines = a.text.split("\n");
