@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { easeOutCubic, fibonacciSphere, project, rotate } from "@/lib/folio/orb";
+import { drawOrb, makeOrb } from "@/lib/folio/orb";
 
 const KEY = "folio-splash-seen";
 const SHOW_MS = 2000; // total time on screen before fading away
@@ -90,57 +90,19 @@ function ParticleOrb() {
     canvas.style.width = `${css}px`;
     canvas.style.height = `${css}px`;
 
-    const count = css < 220 ? 650 : 1000;
-    const base = fibonacciSphere(count);
-    // Each particle starts scattered outward and gathers onto the sphere, a little later for some.
-    const seeds = base.map((_, i) => {
-      const a = Math.sin(i * 12.9898) * 43758.5453;
-      const b = Math.sin(i * 78.233) * 12345.6789;
-      return { dist: 1.6 + (a - Math.floor(a)) * 2.4, delay: (b - Math.floor(b)) * 0.35 };
-    });
-
-    const radius = (css * dpr) / 2 / 1.55;
-    const c = (css * dpr) / 2;
-    let raf = 0;
+    const orb = makeOrb(css < 220 ? 650 : 1000, css * dpr, dpr, reduce);
     const t0 = performance.now();
-
-    const draw = (now: number) => {
-      const t = reduce ? 3 : (now - t0) / 1000;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // soft glow behind the orb
-      const glow = ctx.createRadialGradient(c, c, 0, c, c, radius * 1.45);
-      glow.addColorStop(0, "rgba(229,50,45,0.20)");
-      glow.addColorStop(1, "rgba(229,50,45,0)");
-      ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.globalCompositeOperation = "lighter";
-      const breathe = 1 + Math.sin(t * 2.2) * 0.025;
-      const ry = t * 0.55;
-      const rx = 0.38 + Math.sin(t * 0.4) * 0.08;
-      for (let i = 0; i < base.length; i++) {
-        const s = seeds[i];
-        const k = easeOutCubic((t - s.delay) / 1.15); // 0 = scattered, 1 = on the sphere
-        const out = 1 + (1 - k) * s.dist;
-        const p = rotate({ x: base[i].x * out, y: base[i].y * out, z: base[i].z * out }, ry, rx);
-        const q = project(p, radius * breathe, c, c);
-        const near = q.depth;
-        const alpha = (0.18 + near * 0.8) * (0.25 + 0.75 * k);
-        const size = (0.7 + near * 1.5) * q.scale * dpr * 0.75;
-        // far side deep red, near side warm white
-        const r = 229 + Math.round(26 * near);
-        const g = 50 + Math.round(120 * near * near);
-        const b = 45 + Math.round(95 * near * near);
-        ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-        ctx.beginPath();
-        ctx.arc(q.x, q.y, size, 0, Math.PI * 2);
-        ctx.fill();
+    let raf = 0;
+    const frame = (now: number) => {
+      // Schedule the next frame first so one bad frame can never stop the animation.
+      if (!reduce) raf = requestAnimationFrame(frame);
+      try {
+        drawOrb(ctx, orb, (now - t0) / 1000);
+      } catch {
+        /* skip this frame */
       }
-      ctx.globalCompositeOperation = "source-over";
-      if (!reduce) raf = requestAnimationFrame(draw);
     };
-    raf = requestAnimationFrame(draw);
+    raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
   }, []);
 
