@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { drawOrb, makeOrb } from "@/lib/folio/orb";
+import { drawIntro, INTRO, makeIntro } from "@/lib/folio/orb";
 
 const KEY = "folio-splash-seen";
-const SHOW_MS = 2000; // total time on screen before fading away
-const FADE_MS = 550;
+const SHOW_MS = Math.round(INTRO.total * 1000); // gather, big orb, shrink, settle, then fade
+const FADE_MS = 600;
 const BG = "#101116";
 
 /**
@@ -57,17 +57,14 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
           aria-live="polite"
           aria-label="Loading Folio"
           onClick={finish}
-          className="fixed inset-0 z-[200] flex cursor-pointer flex-col items-center justify-center gap-7 px-6 transition-opacity ease-out"
+          className="fixed inset-0 z-[200] flex cursor-pointer items-center justify-center overflow-hidden px-6 transition-opacity ease-out"
           style={{
             background: `radial-gradient(ellipse at 50% 58%, #1d1a1f 0%, ${BG} 62%)`,
             opacity: phase === "leave" ? 0 : 1,
             transitionDuration: `${FADE_MS}ms`,
           }}
         >
-          <h1 className="splash-word font-display text-[clamp(3.4rem,15vw,5.5rem)] leading-none font-extrabold tracking-[-0.045em] text-[#f5f5f8]">
-            Folio
-          </h1>
-          <ParticleOrb />
+          <ParticleField />
         </div>
       )}
       <div className={phase === "done" ? "opacity-100" : "pointer-events-none opacity-0"}>{children}</div>
@@ -75,29 +72,44 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ParticleOrb() {
-  const ref = useRef<HTMLCanvasElement>(null);
+const GAP = 24; // space between the wordmark and the small orb
+
+/**
+ * Full-screen particle field. Particles stream in from every side and gather into an orb that fills the
+ * screen; the orb then shrinks and settles below the "Folio" wordmark, turning the whole time.
+ */
+function ParticleField() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
+  const [orbSize] = useState(() =>
+    typeof window === "undefined" ? 220 : Math.round(Math.min(window.innerWidth * 0.54, 236)),
+  );
 
   useEffect(() => {
-    const canvas = ref.current;
+    const canvas = canvasRef.current;
+    const spacer = spacerRef.current;
     const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
+    if (!canvas || !spacer || !ctx) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const css = Math.min(280, Math.round(window.innerWidth * 0.68));
+    const w = window.innerWidth;
+    const h = window.innerHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = css * dpr;
-    canvas.height = css * dpr;
-    canvas.style.width = `${css}px`;
-    canvas.style.height = `${css}px`;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.scale(dpr, dpr);
 
-    const orb = makeOrb(css < 220 ? 650 : 1000, css * dpr, dpr, reduce);
+    // The small orb rests exactly in the empty slot under the wordmark.
+    const box = spacer.getBoundingClientRect();
+    const rest = { cx: box.left + box.width / 2, cy: box.top + box.height / 2, r: box.width / 2 };
+    const state = makeIntro(w < 480 ? 1100 : 1500, w, h, rest, reduce);
+
     const t0 = performance.now();
     let raf = 0;
     const frame = (now: number) => {
       // Schedule the next frame first so one bad frame can never stop the animation.
       if (!reduce) raf = requestAnimationFrame(frame);
       try {
-        drawOrb(ctx, orb, (now - t0) / 1000);
+        drawIntro(ctx, state, (now - t0) / 1000);
       } catch {
         /* skip this frame */
       }
@@ -106,5 +118,20 @@ function ParticleOrb() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  return <canvas ref={ref} aria-hidden="true" className="block" />;
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        aria-hidden="true"
+        className="absolute inset-0 block h-full w-full"
+        style={{ background: "transparent" }}
+      />
+      <div className="relative z-10 flex flex-col items-center" style={{ gap: GAP }}>
+        <h1 className="splash-word font-display text-[clamp(3.4rem,15vw,5.5rem)] leading-none font-extrabold tracking-[-0.045em] text-[#f5f5f8]">
+          Folio
+        </h1>
+        <div ref={spacerRef} style={{ width: orbSize, height: orbSize }} aria-hidden="true" />
+      </div>
+    </>
+  );
 }

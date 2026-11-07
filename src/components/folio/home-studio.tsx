@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown, Search } from "lucide-react";
 import { AppShell } from "@/components/folio/app-chrome";
@@ -59,14 +60,37 @@ const FAQ = [
   },
 ];
 
+/** The tools most people come for. Everything else sits behind "Show all". */
+const FEATURED = [
+  "merge-pdf",
+  "split-pdf",
+  "compress-pdf",
+  "edit-pdf",
+  "pdf-to-word",
+  "word-to-pdf",
+  "jpg-to-pdf",
+  "sign-pdf",
+];
+const COLLAPSED_COUNT = FEATURED.length;
+
 export function HomeStudio() {
   const [category, setCategory] = useState<CategoryId>("all");
   const [query, setQuery] = useState("");
   const searching = query.trim().length > 0;
   const total = TOOLS.length;
-  const list = useMemo(() => {
+  const [showAll, setShowAll] = useState(false);
+  const full = useMemo(() => {
     return searching ? searchTools(query) : toolsIn(category);
   }, [category, query, searching]);
+  const collapsible = !searching && full.length > COLLAPSED_COUNT;
+  const collapsed = collapsible && !showAll;
+  const list = useMemo(() => {
+    if (!collapsed) return full;
+    if (category === "all") {
+      return FEATURED.map((id) => full.find((t) => t.id === id)).filter((t): t is PdfTool => !!t);
+    }
+    return full.slice(0, COLLAPSED_COUNT);
+  }, [collapsed, full, category]);
 
   return (
     <AppShell>
@@ -100,7 +124,10 @@ export function HomeStudio() {
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => setCategory(c.id)}
+                  onClick={() => {
+                  setCategory(c.id);
+                  setShowAll(false);
+                }}
                   data-active={category === c.id}
                   className="cat-tab"
                 >
@@ -126,6 +153,19 @@ export function HomeStudio() {
             list.map((t) => <ToolCard key={t.id} tool={t} />)
           )}
         </div>
+        {collapsible && (
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              aria-expanded={showAll}
+              className="inline-flex h-11 items-center gap-2 rounded-full border border-border bg-surface px-5 text-sm font-bold outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {showAll ? "Show fewer tools" : `Show all ${full.length} tools`}
+              <ChevronDown className={cn("size-4 transition-transform", showAll && "rotate-180")} aria-hidden="true" />
+            </button>
+          </div>
+        )}
       </section>
 
 

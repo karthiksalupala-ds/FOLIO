@@ -33,12 +33,16 @@ export function project(p: Vec3, radius: number, cx: number, cy: number, focal =
   return { x: cx + p.x * radius * k, y: cy + p.y * radius * k, scale: k, depth: (p.z + 1) / 2 };
 }
 
+export const easeInOutCubic = (t: number) => {
+  const x = Math.min(1, Math.max(0, t));
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+};
+
 export const easeOutCubic = (t: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 
 export type OrbContext = {
   clearRect(x: number, y: number, w: number, h: number): void;
   createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number): { addColorStop(o: number, c: string): void };
-  fillRect(x: number, y: number, w: number, h: number): void;
   beginPath(): void;
   arc(x: number, y: number, r: number, a0: number, a1: number): void;
   fill(): void;
@@ -46,61 +50,99 @@ export type OrbContext = {
   globalCompositeOperation: string;
 };
 
-export type OrbState = {
+/** Timeline of the intro, in seconds. */
+export const INTRO = {
+  gather: 2.0, // particles fly in from every side and form a big orb
+  delayMax: 0.7, // spread of start times so it feels like a swarm
+  shrinkAt: 1.9, // the big orb starts shrinking towards its resting place
+  shrinkFor: 1.5,
+  total: 4.6,
+};
+
+export type IntroState = {
   points: Vec3[];
-  seeds: { dist: number; delay: number }[];
-  size: number; // canvas size in device pixels (square)
-  dpr: number;
+  seeds: { sx: number; sy: number; delay: number; swirl: number }[];
+  /** Screen size in CSS pixels. */
+  w: number;
+  h: number;
+  /** Where the small orb ends up (CSS pixels): under the wordmark. */
+  rest: { cx: number; cy: number; r: number };
+  /** Radius of the big orb that fills the screen. */
+  big: number;
   reduce: boolean;
 };
 
-export function makeOrb(count: number, size: number, dpr: number, reduce: boolean): OrbState {
+const frac = (x: number) => x - Math.floor(x);
+
+export function makeIntro(count: number, w: number, h: number, rest: { cx: number; cy: number; r: number }, reduce: boolean): IntroState {
   const points = fibonacciSphere(count);
+  const reach = Math.hypot(w, h) / 2;
   const seeds = points.map((_, i) => {
-    const a = Math.sin(i * 12.9898) * 43758.5453;
-    const b = Math.sin(i * 78.233) * 12345.6789;
-    return { dist: 1.6 + (a - Math.floor(a)) * 2.4, delay: (b - Math.floor(b)) * 0.35 };
+    const a = frac(Math.sin(i * 12.9898) * 43758.5453) * Math.PI * 2;
+    const d = reach * (0.85 + 0.4 * frac(Math.sin(i * 39.3468) * 24634.6345)); // beyond the screen edges: arrives from all sides
+    return {
+      sx: w / 2 + Math.cos(a) * d,
+      sy: h / 2 + Math.sin(a) * d,
+      delay: frac(Math.sin(i * 78.233) * 12345.6789) * INTRO.delayMax,
+      swirl: frac(Math.sin(i * 5.123) * 9871.321) * 2 - 1,
+    };
   });
-  return { points, seeds, size, dpr, reduce };
+  return { points, seeds, w, h, rest, big: Math.max(w, h) * 0.4, reduce };
 }
 
-/** Draw one frame at time `t` seconds. Returns how many particles landed inside the canvas. */
-export function drawOrb(ctx: OrbContext, o: OrbState, tSeconds: number): number {
-  const t = o.reduce ? 3 : tSeconds;
-  const c = o.size / 2;
-  const radius = o.size / 2 / 1.55;
-  ctx.clearRect(0, 0, o.size, o.size);
-  const glow = ctx.createRadialGradient(c, c, 0, c, c, radius * 1.45);
+/**
+ * Draw one frame at `tSeconds`. Particles fly in from all sides and gather into an orb that fills the screen,
+ * then the orb shrinks and settles at `rest`, turning all the time.
+ * Returns how many particles were drawn inside the screen.
+ */
+export function drawIntro(ctx: OrbContext, o: IntroState, tSeconds: number): number {
+  const t = o.reduce ? INTRO.total - 0.4 : tSeconds;
+  const shrink = easeInOutCubic((t - INTRO.shrinkAt) / INTRO.shrinkFor);
+  const R = o.big + (o.rest.r - o.big) * shrink;
+  const cx = o.w / 2 + (o.rest.cx - o.w / 2) * shrink;
+  const cy = o.h / 2 + (o.rest.cy - o.h / 2) * shrink;
+  const grow = Math.min(1, Math.max(1, R / o.rest.r)); // >= 1
+  const sizeBoost = Math.pow(Math.min(2.6, R / o.rest.r), 0.55) * (grow || 1);
+
+  ctx.clearRect(0, 0, o.w, o.h);
+  // Soft glow, drawn as a circle (never a rectangle) so it cannot show a box edge on any screen.
+  ctx.globalCompositeOperation = "source-over";
+  const glowR = R * 1.35;
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
   glow.addColorStop(0, "rgba(229,50,45,0.20)");
+  glow.addColorStop(0.7, "rgba(229,50,45,0.05)");
   glow.addColorStop(1, "rgba(229,50,45,0)");
   ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, o.size, o.size);
+  ctx.beginPath();
+  ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.globalCompositeOperation = "lighter";
-  const breathe = 1 + Math.sin(t * 2.2) * 0.025;
-  const ry = t * 0.55;
-  const rx = 0.38 + Math.sin(t * 0.4) * 0.08;
-  let visible = 0;
+  const ry = t * 0.9;
+  const rx = 0.35 + Math.sin(t * 0.5) * 0.07;
+  const breathe = 1 + Math.sin(t * 2.4) * 0.02;
+  let drawn = 0;
   for (let i = 0; i < o.points.length; i++) {
     const s = o.seeds[i];
-    const k = easeOutCubic((t - s.delay) / 1.15); // 0 = scattered, 1 = on the sphere
-    const out = 1 + (1 - k) * s.dist;
-    const b = o.points[i];
-    const p = rotate({ x: b.x * out, y: b.y * out, z: b.z * out }, ry, rx);
-    const q = project(p, radius * breathe, c, c);
-    if (!(q.x > -4 && q.x < o.size + 4 && q.y > -4 && q.y < o.size + 4)) continue; // off canvas (also skips NaN)
+    const k = easeOutCubic((t - s.delay) / INTRO.gather);
+    const q = project(rotate(o.points[i], ry, rx), R * breathe, cx, cy);
+    // Fly from the start point to the particle's place on the orb, curving a little on the way.
+    const bend = (1 - k) * k * 4 * s.swirl * o.big * 0.22;
+    const dx = q.x - s.sx;
+    const dy = q.y - s.sy;
+    const len = Math.hypot(dx, dy) || 1;
+    const x = s.sx + dx * k + (-dy / len) * bend;
+    const y = s.sy + dy * k + (dx / len) * bend;
+    if (!(x > -6 && x < o.w + 6 && y > -6 && y < o.h + 6)) continue;
     const near = Math.min(1, Math.max(0, q.depth));
-    const alpha = (0.18 + near * 0.8) * (0.25 + 0.75 * k);
-    const size = Math.max(0.4, (0.7 + near * 1.5) * Math.min(q.scale, 2.5) * o.dpr * 0.75);
-    const r = 229 + Math.round(26 * near);
-    const g = 50 + Math.round(120 * near * near);
-    const bl = 45 + Math.round(95 * near * near);
-    ctx.fillStyle = `rgba(${r},${g},${bl},${alpha.toFixed(3)})`;
+    const alpha = (0.2 + near * 0.75) * (0.2 + 0.8 * k);
+    const size = Math.max(0.5, (0.7 + near * 1.4) * Math.min(q.scale, 2.2) * 0.8 * sizeBoost);
+    ctx.fillStyle = `rgba(${229 + Math.round(26 * near)},${50 + Math.round(120 * near * near)},${45 + Math.round(95 * near * near)},${alpha.toFixed(3)})`;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, size, 0, Math.PI * 2);
+    ctx.arc(x, y, size, 0, Math.PI * 2);
     ctx.fill();
-    visible++;
+    drawn++;
   }
   ctx.globalCompositeOperation = "source-over";
-  return visible;
+  return drawn;
 }
