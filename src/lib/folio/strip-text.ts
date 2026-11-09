@@ -1,6 +1,7 @@
-import type { PDFPage } from "pdf-lib";
-import { decodePDFRawStream } from "pdf-lib/cjs/core/streams/decode.js";
-import PDFName from "pdf-lib/cjs/core/objects/PDFName.js";
+// Import from the package root so these are the very same classes the app's PDFDocument uses. Importing pdf-lib's
+// internal "cjs" files pulled in a second copy of PDFName in the browser build, so dictionary lookups (Filter,
+// Resources, XObject...) silently missed and text removal never worked there.
+import { PDFName, decodePDFRawStream, type PDFPage } from "pdf-lib";
 
 export type NormRect = { x: number; y: number; w: number; h: number };
 

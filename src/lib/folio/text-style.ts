@@ -7,6 +7,8 @@ export type FontLook = {
   italic: boolean;
   /** Name pdf.js registered the PDF's embedded font under, so the browser can draw the exact original glyphs. */
   css?: string;
+  /** Closest bundled font (see font-catalog.ts), used for the edit preview and the saved PDF. */
+  face?: string;
 };
 
 function classifyFamily(text: string): FontFamily | null {

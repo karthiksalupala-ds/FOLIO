@@ -52,6 +52,17 @@ function embedFor(doc: PDFDocument, script: Script): Promise<PDFFont | null> {
   return p;
 }
 
+/** Bytes of a bundled font file (cached). `file` is relative to /fonts/. */
+export function loadFontBytes(file: string): Promise<ArrayBuffer> {
+  let bytes = bytesCache.get(file);
+  if (!bytes) {
+    bytes = loader(file);
+    bytesCache.set(file, bytes);
+    bytes.catch(() => bytesCache.delete(file));
+  }
+  return bytes;
+}
+
 export type DrawOpts = {
   x: number;
   y: number;

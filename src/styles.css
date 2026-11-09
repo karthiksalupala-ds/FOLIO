@@ -165,30 +165,25 @@
     caret-color: var(--color-ink);
   }
 
+  /* No boxes by default: a real editor only reveals a line when you point at it or type in it. */
   .text-layer-item.is-live {
     cursor: text;
-    outline: 1px dashed rgb(229 50 45 / 0.55);
-    outline-offset: 1px;
     border-radius: 2px;
+    outline: 1px solid transparent;
+    outline-offset: 1px;
     z-index: 2;
   }
 
-  .text-layer-item.is-live:hover,
-  .text-layer-item.is-live:focus {
-    outline: 1px solid var(--color-accent);
-    z-index: 2;
+  @media (hover: hover) {
+    .text-layer-item.is-live:hover {
+      outline-color: rgb(229 50 45 / 0.45);
+    }
   }
 
   /* While editing, the line is drawn with the sampled colours (inline), so the original text underneath is hidden. */
   .text-layer-item.is-live:focus {
-    outline-width: 2px;
+    outline: 2px solid var(--color-accent);
     z-index: 3;
-  }
-
-  .text-layer-item.is-replaced {
-    color: var(--color-ink);
-    background: #fff;
-    z-index: 1;
   }
 
   .tool-card {
@@ -474,3 +469,37 @@
     animation: none;
   }
 }
+
+/* Editing fonts (same files are embedded into the saved PDF) */
+@font-face { font-family: "Folio Liberation Sans"; font-weight: 400; font-style: normal; src: url("/fonts/pdf/liberation-sans-regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Sans"; font-weight: 700; font-style: normal; src: url("/fonts/pdf/liberation-sans-bold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Sans"; font-weight: 400; font-style: italic; src: url("/fonts/pdf/liberation-sans-italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Sans"; font-weight: 700; font-style: italic; src: url("/fonts/pdf/liberation-sans-bolditalic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Carlito"; font-weight: 400; font-style: normal; src: url("/fonts/pdf/carlito-regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Carlito"; font-weight: 700; font-style: normal; src: url("/fonts/pdf/carlito-bold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Carlito"; font-weight: 400; font-style: italic; src: url("/fonts/pdf/carlito-italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Carlito"; font-weight: 700; font-style: italic; src: url("/fonts/pdf/carlito-bolditalic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio DejaVu Sans"; font-weight: 400; font-style: normal; src: url("/fonts/pdf/dejavu-sans-regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio DejaVu Sans"; font-weight: 700; font-style: normal; src: url("/fonts/pdf/dejavu-sans-bold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio DejaVu Sans"; font-weight: 400; font-style: italic; src: url("/fonts/pdf/dejavu-sans-italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio DejaVu Sans"; font-weight: 700; font-style: italic; src: url("/fonts/pdf/dejavu-sans-bolditalic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Poppins"; font-weight: 400; font-style: normal; src: url("/fonts/pdf/poppins-regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Poppins"; font-weight: 700; font-style: normal; src: url("/fonts/pdf/poppins-bold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Poppins"; font-weight: 400; font-style: italic; src: url("/fonts/pdf/poppins-italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Poppins"; font-weight: 700; font-style: italic; src: url("/fonts/pdf/poppins-bolditalic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Serif"; font-weight: 400; font-style: normal; src: url("/fonts/pdf/liberation-serif-regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Serif"; font-weight: 700; font-style: normal; src: url("/fonts/pdf/liberation-serif-bold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Serif"; font-weight: 400; font-style: italic; src: url("/fonts/pdf/liberation-serif-italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Serif"; font-weight: 700; font-style: italic; src: url("/fonts/pdf/liberation-serif-bolditalic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Caladea"; font-weight: 400; font-style: normal; src: url("/fonts/pdf/caladea-regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Caladea"; font-weight: 700; font-style: normal; src: url("/fonts/pdf/caladea-bold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Caladea"; font-weight: 400; font-style: italic; src: url("/fonts/pdf/caladea-italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Caladea"; font-weight: 700; font-style: italic; src: url("/fonts/pdf/caladea-bolditalic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio DejaVu Serif"; font-weight: 400; font-style: normal; src: url("/fonts/pdf/dejavu-serif-regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio DejaVu Serif"; font-weight: 700; font-style: normal; src: url("/fonts/pdf/dejavu-serif-bold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio DejaVu Serif"; font-weight: 400; font-style: italic; src: url("/fonts/pdf/dejavu-serif-italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio DejaVu Serif"; font-weight: 700; font-style: italic; src: url("/fonts/pdf/dejavu-serif-bolditalic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Mono"; font-weight: 400; font-style: normal; src: url("/fonts/pdf/liberation-mono-regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Mono"; font-weight: 700; font-style: normal; src: url("/fonts/pdf/liberation-mono-bold.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Mono"; font-weight: 400; font-style: italic; src: url("/fonts/pdf/liberation-mono-italic.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Folio Liberation Mono"; font-weight: 700; font-style: italic; src: url("/fonts/pdf/liberation-mono-bolditalic.ttf") format("truetype"); font-display: swap; }

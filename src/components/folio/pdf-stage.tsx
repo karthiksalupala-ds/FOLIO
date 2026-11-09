@@ -1,17 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyzeColors, fitFontSize } from "@/lib/folio/text-style";
 import { groupLines, type TextLine } from "@/lib/folio/lines";
+import { cssFamilyFor } from "@/lib/folio/font-catalog";
 import { Spinner } from "@/components/folio/loading";
-import { uid } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { asArrayBuffer, cn, uid } from "@/lib/utils";
 import { useFolio } from "@/lib/folio/store";
-import {
-  extractPageText,
-  openPdfJs,
-  renderPageToCanvas,
-  type PdfDocProxy,
-  type TextItem,
-} from "@/lib/folio/pdf";
+import { extractPageText, openPdfJs, renderPageToCanvas, type PdfDocProxy, type TextItem, bakePdf } from "@/lib/folio/pdf";
 import type { Annot, FolioDoc, Point, StampId, Tool } from "@/lib/folio/types";
 import { STAMPS } from "@/lib/folio/types";
 
@@ -99,11 +93,23 @@ export function PdfStage({
     };
   }, [doc.id, doc.bytes]);
 
+  // Text edits are baked into the page itself (original words removed, new words drawn in the chosen font), so the
+  // page you see is the page you'll download: no white layer on top. Edits are the only thing that changes this key.
+  const editKey = JSON.stringify(
+    pageAnnots
+      .filter((a) => a.type === "replace")
+      .map((a) => (a.type === "replace" ? [a.id, a.text, a.x, a.y, a.w, a.h, a.fontSize, a.color, a.bg, a.font, a.bold, a.italic] : null)),
+  );
+  const baked = useRef<PdfDocProxy | null>(null);
+  const drawnKey = useRef("");
+
   useEffect(() => {
     if (!pdf || !canvasRef.current || !pageMeta) return;
     let cancelled = false;
     let refit = false;
-    setBusy(true);
+    const viewKey = `${doc.id}|${pageIndex}|${pageMeta.source}|${pageMeta.rotation}|${zoom}|${doc.bytes.byteLength}`;
+    const onlyEditsChanged = drawnKey.current === viewKey;
+    if (!onlyEditsChanged) setBusy(true); // a quiet redraw after an edit: no spinner, no flash
     (async () => {
       try {
         const page = await pdf.getPage(pageMeta.source + 1);
@@ -120,16 +126,53 @@ export function PdfStage({
             return;
           }
         }
-        const { width, height } = await renderPageToCanvas(
-          page,
-          canvasRef.current!,
-          zoom,
-          pageMeta.rotation,
-        );
-        if (cancelled) return;
+        let renderPage = page;
+        let bakedDoc: PdfDocProxy | null = null;
+        const now = st.current;
+        const edits = now ? now.annotations.filter((a) => a.page === pageIndex && a.type === "replace") : [];
+        if (now && edits.length) {
+          try {
+            // A one-page PDF made from this page + its text edits. Rotation is applied when drawing, not baked.
+            const bytes = await bakePdf({
+              ...now,
+              pages: [{ ...pageMeta, rotation: 0 }],
+              annotations: edits.map((a) => ({ ...a, page: 0 })),
+              watermark: undefined,
+              pageNumbers: false,
+            });
+            if (cancelled) return;
+            bakedDoc = await openPdfJs(asArrayBuffer(bytes));
+            if (cancelled) {
+              void bakedDoc.cleanup();
+              return;
+            }
+            renderPage = await bakedDoc.getPage(1);
+          } catch {
+            renderPage = page; // could not bake: show the original page (edits still count when downloading)
+            void bakedDoc?.cleanup();
+            bakedDoc = null;
+          }
+        }
+        // Draw off-screen first and copy over in one go, so the page never blinks.
+        const tmp = document.createElement("canvas");
+        const { width, height } = await renderPageToCanvas(renderPage, tmp, zoom, pageMeta.rotation);
+        if (cancelled) {
+          void bakedDoc?.cleanup();
+          return;
+        }
+        const main = canvasRef.current;
+        if (!main) return;
+        main.width = tmp.width;
+        main.height = tmp.height;
+        main.style.width = `${width}px`;
+        main.style.height = `${height}px`;
+        main.getContext("2d")?.drawImage(tmp, 0, 0);
+        void baked.current?.cleanup();
+        baked.current = bakedDoc;
+        drawnKey.current = viewKey;
         setSize({ w: width, h: height });
-        const base = page.getViewport({ scale: zoom, rotation: pageMeta.rotation });
-        const text = await extractPageText(page, base.width, base.height, base.transform);
+        const base = renderPage.getViewport({ scale: zoom, rotation: pageMeta.rotation });
+        const text = await extractPageText(renderPage, base.width, base.height, base.transform);
         if (!cancelled) setItems(text);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Render failed");
@@ -140,7 +183,14 @@ export function PdfStage({
     return () => {
       cancelled = true;
     };
-  }, [pdf, pageMeta, zoom, pageIndex]);
+  }, [pdf, pageMeta, zoom, pageIndex, editKey, doc.id, doc.bytes]);
+
+  useEffect(
+    () => () => {
+      void baked.current?.cleanup();
+    },
+    [],
+  );
 
   // Keep the page fitted to the screen (rotation, window resize, "fit width" button).
   useEffect(() => {
@@ -498,8 +548,7 @@ export function PdfStage({
                     fontSize: Math.max(6, (fontPx ?? line.fontSize) / zoom),
                     color: colors?.fg ?? "#1c1917",
                     bg: colors?.bg ?? "#ffffff",
-                    font: line.look?.font,
-                    cssFont: line.look?.css,
+                    font: line.look?.face,
                     bold: line.look?.bold,
                     italic: line.look?.italic,
                   });
@@ -560,7 +609,7 @@ export function PdfStage({
                   height: `${a.h * 100}%`,
                   fontSize: a.fontSize * zoom * 0.85,
                   color: a.color,
-                  fontFamily: CSS_FONTS[a.font ?? "sans"],
+                  fontFamily: cssFamilyFor(a.font),
                   fontWeight: a.bold ? 700 : 400,
                   fontStyle: a.italic ? "italic" : "normal",
                   textAlign: a.align,
@@ -718,17 +767,10 @@ function AnnotShape({ a, selected }: { a: Annot; selected: boolean }) {
       </g>
     );
   }
-  if (a.type === "replace") {
-    return <rect x={a.x} y={a.y} width={a.w} height={a.h} fill={a.bg ?? "#ffffff"} />;
-  }
+  // Text edits are baked into the page itself (see the render effect), so there is nothing to paint over it.
   return null;
 }
 
-const CSS_FONTS = {
-  sans: 'Helvetica, Arial, "Nimbus Sans", sans-serif',
-  serif: '"Times New Roman", Times, "Nimbus Roman", serif',
-  mono: '"Courier New", Courier, monospace',
-} as const;
 
 /** Read the background and ink colour under a text line from the rendered page canvas. */
 function sampleLine(canvas: HTMLCanvasElement | null, line: TextLine) {
@@ -782,7 +824,7 @@ function LineEdit({
   line: TextLine;
   text: string;
   replaced: boolean;
-  look?: { color: string; bg?: string; cssFont?: string; font?: "sans" | "serif" | "mono"; bold?: boolean; italic?: boolean };
+  look?: { color: string; bg?: string; cssFont?: string; font?: string; bold?: boolean; italic?: boolean };
   editable: boolean;
   getColors: () => { bg: string; fg: string } | null;
   onFocusLine?: () => void;
@@ -796,16 +838,7 @@ function LineEdit({
     if (el.textContent !== text) el.textContent = text;
   }, [text]);
 
-  const generic = CSS_FONTS[look?.font ?? line.look?.font ?? "sans"];
-  // If the user picked a different font / weight / slant, the PDF's own font no longer applies.
-  const sameStyle =
-    !look ||
-    ((look.font ?? line.look?.font) === line.look?.font &&
-      !!look.bold === !!line.look?.bold &&
-      !!look.italic === !!line.look?.italic);
-  const embedded = sameStyle ? (look?.cssFont ?? line.look?.css) : undefined;
-  // The PDF's own font first (exact glyphs), then a close system font for letters the PDF never used.
-  const family = embedded ? `"${embedded}", ${generic}` : generic;
+  const family = cssFamilyFor(look?.font ?? line.look?.face);
   const bold = look?.bold ?? line.look?.bold ?? false;
   const italic = look?.italic ?? line.look?.italic ?? false;
   const fitted = useMemo(
@@ -815,7 +848,8 @@ function LineEdit({
 
   // While editing (or once edited) draw the text the way the page draws it: same ink, same background,
   // same kind of font and width, so the original underneath is fully covered.
-  const colours = look ? { fg: look.color, bg: look.bg ?? "#ffffff" } : live;
+  // The page itself already shows the edited words, so nothing is painted over it until you start typing.
+  const colours = live;
   return (
     <div
       ref={ref}

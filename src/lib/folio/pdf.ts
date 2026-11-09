@@ -1,7 +1,8 @@
 import { PDFDocument, StandardFonts, rgb, degrees, LineCapStyle, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
 import type { Annot, FolioDoc, PageMeta, Point } from "./types";
 import { uid, asArrayBuffer } from "@/lib/utils";
-import { drawRuns } from "./fonts";
+import { drawRuns, loadFontBytes } from "./fonts";
+import { catalogIdFor, fontFile, fontKindOf } from "./font-catalog";
 import { fontStyleFrom, type FontLook } from "./text-style";
 import { stripTextInRects } from "./strip-text";
 
@@ -105,6 +106,7 @@ export async function extractPageText(
         bold: guess.bold || !!f?.bold || !!f?.black,
         italic: guess.italic || !!f?.italic,
         css: f?.loadedName,
+        face: catalogIdFor(f?.name ?? fontName, guess.font),
       };
       looks.set(fontName, l);
     }
@@ -333,7 +335,15 @@ export async function bakePdf(doc: FolioDoc): Promise<Uint8Array> {
 
 const stdCache = new WeakMap<PDFDocument, Map<string, Promise<PDFFont>>>();
 
-/** Standard PDF fonts closest to the original text style (sans = Helvetica, serif = Times, mono = Courier). */
+function cached(pdf: PDFDocument, key: string, make: () => Promise<PDFFont>): Promise<PDFFont> {
+  let m = stdCache.get(pdf);
+  if (!m) stdCache.set(pdf, (m = new Map()));
+  let p = m.get(key);
+  if (!p) m.set(key, (p = make()));
+  return p;
+}
+
+/** Standard PDF fonts (no download): the fallback when a bundled font can't be loaded. */
 function standardFont(pdf: PDFDocument, family: "sans" | "serif" | "mono", bold: boolean, italic: boolean): Promise<PDFFont> {
   const F = StandardFonts;
   const table = {
@@ -342,11 +352,26 @@ function standardFont(pdf: PDFDocument, family: "sans" | "serif" | "mono", bold:
     mono: [F.Courier, F.CourierBold, F.CourierOblique, F.CourierBoldOblique],
   }[family];
   const name = table[(bold ? 1 : 0) + (italic ? 2 : 0)];
-  let m = stdCache.get(pdf);
-  if (!m) stdCache.set(pdf, (m = new Map()));
-  let p = m.get(name);
-  if (!p) m.set(name, (p = pdf.embedFont(name)));
-  return p;
+  return cached(pdf, name, () => pdf.embedFont(name));
+}
+
+/** The font the user picked, embedded into the PDF; falls back to a standard font if it can't be loaded. */
+export async function resolveFont(pdf: PDFDocument, id: string | undefined, bold: boolean, italic: boolean): Promise<PDFFont> {
+  const file = fontFile(id, bold, italic);
+  if (file) {
+    try {
+      return await cached(pdf, file, async () => {
+        const bytes = await loadFontBytes(file);
+        const fontkit = (await import("@pdf-lib/fontkit")).default;
+        pdf.registerFontkit(fontkit);
+        // Full (already Latin-trimmed) font program: pdf.js refuses the stripped tables fontkit writes for subsets
+        return pdf.embedFont(bytes, { subset: false });
+      });
+    } catch {
+      /* use the standard font below */
+    }
+  }
+  return standardFont(pdf, fontKindOf(id), bold, italic);
 }
 
 async function drawAnnot(
@@ -448,9 +473,9 @@ async function drawAnnot(
       }
       const font =
         a.type === "replace"
-          ? await standardFont(pdf, a.font ?? "sans", !!a.bold, !!a.italic)
+          ? await resolveFont(pdf, a.font, !!a.bold, !!a.italic)
           : a.type === "text"
-            ? await standardFont(pdf, a.font ?? "sans", !!a.bold, !!a.italic)
+            ? await resolveFont(pdf, a.font, !!a.bold, !!a.italic)
             : fonts.helv;
       const size = a.fontSize;
       const lines = a.text.split("\n");

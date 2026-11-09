@@ -78,6 +78,7 @@ import { convertDoc } from "@/lib/folio/convert";
 import { downloadBlob, cn, asArrayBuffer } from "@/lib/utils";
 import { INK_COLORS, MARK_COLORS, STAMPS, type Annot, type Tool } from "@/lib/folio/types";
 import { uid } from "@/lib/utils";
+import { FONT_CATALOG, catalogFont, cssFamilyFor } from "@/lib/folio/font-catalog";
 import { defaultPages, mergePdfs } from "@/lib/folio/pdf";
 import { PDFDocument } from "pdf-lib";
 
@@ -284,7 +285,7 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
           <FolioWordmark compact />
         </div>
         <Input
-          className="h-8 min-w-0 max-w-56 flex-1 bg-transparent text-sm shadow-none md:max-w-xs"
+          className="hidden h-8 min-w-0 max-w-56 flex-1 bg-transparent text-sm shadow-none sm:block md:max-w-xs"
           value={doc.name}
           onChange={(e) => rename(e.target.value)}
           aria-label="Filename"
@@ -603,11 +604,37 @@ function EditorChrome({ onHome }: { onHome: () => void }) {
   );
 }
 
-const FONT_CHOICES = [
-  { id: "sans", label: "Sans", css: "Helvetica, Arial, sans-serif" },
-  { id: "serif", label: "Serif", css: '"Times New Roman", Times, serif' },
-  { id: "mono", label: "Mono", css: '"Courier New", monospace' },
-] as const;
+/** Font dropdown: native select so it works well on phones too. Fonts are shown in their own typeface. */
+function FontSelect({ value, onChange, className }: { value: string | undefined; onChange: (id: string) => void; className?: string }) {
+  const current = catalogFont(value)?.id ?? FONT_CATALOG[0].id;
+  const groups: [string, string][] = [
+    ["sans", "Sans serif"],
+    ["serif", "Serif"],
+    ["mono", "Monospace"],
+  ];
+  return (
+    <select
+      aria-label="Font"
+      value={current}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(
+        "h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        className,
+      )}
+      style={{ fontFamily: cssFamilyFor(current) }}
+    >
+      {groups.map(([kind, label]) => (
+        <optgroup key={kind} label={label}>
+          {FONT_CATALOG.filter((f) => f.kind === kind).map((f) => (
+            <option key={f.id} value={f.id} style={{ fontFamily: f.css }}>
+              {f.label}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
 
 const SWATCHES = Array.from(new Set([...INK_COLORS, ...MARK_COLORS.map((c) => c.value), "#d93025", "#1a73e8", "#188038"]));
 
@@ -717,20 +744,11 @@ function Inspector() {
       {a && isText && (
         <div>
           <p className="mb-1.5 text-[11px] text-subtle">Font</p>
-          <div className="grid grid-cols-3 gap-1">
-            {FONT_CHOICES.map((f) => (
-              <Button
-                key={f.id}
-                size="sm"
-                variant={(("font" in a && a.font) || "sans") === f.id ? "default" : "secondary"}
-                style={{ fontFamily: f.css }}
-                aria-pressed={(("font" in a && a.font) || "sans") === f.id}
-                onClick={() => patch({ font: f.id } as AnyPatch)}
-              >
-                {f.label}
-              </Button>
-            ))}
-          </div>
+          <FontSelect
+            className="w-full"
+            value={"font" in a ? a.font : undefined}
+            onChange={(id) => patch({ font: id } as AnyPatch)}
+          />
         </div>
       )}
 
@@ -856,19 +874,11 @@ function SelectionBar() {
         ))}
       {isText && (
         <>
-          {FONT_CHOICES.map((f) => (
-            <Button
-              key={f.id}
-              size="sm"
-              variant={(("font" in a && a.font) || "sans") === f.id ? "default" : "secondary"}
-              className="h-9 shrink-0 px-2.5"
-              style={{ fontFamily: f.css }}
-              aria-label={`${f.label} font`}
-              onClick={() => updateAnnot(a.id, { font: f.id } as AnyPatch)}
-            >
-              {f.label}
-            </Button>
-          ))}
+          <FontSelect
+            className="h-9 w-36 shrink-0"
+            value={"font" in a ? a.font : undefined}
+            onChange={(id) => updateAnnot(a.id, { font: id } as AnyPatch)}
+          />
           <Button
             size="icon"
             variant={"bold" in a && a.bold ? "default" : "secondary"}

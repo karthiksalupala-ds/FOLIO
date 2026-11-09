@@ -62,7 +62,7 @@ export type Annot =
       text: string;
       color: string;
       fontSize: number;
-      font?: "sans" | "serif" | "mono";
+      font?: string;
       bold?: boolean;
       italic?: boolean;
       align?: "left" | "center" | "right";
@@ -137,7 +137,7 @@ export type Annot =
       bg?: string;
       /** Embedded-font name from the original page (only valid while the document stays open). */
       cssFont?: string;
-      font?: "sans" | "serif" | "mono";
+      font?: string;
       bold?: boolean;
       italic?: boolean;
     });
