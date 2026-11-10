@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { drawIntro, INTRO, makeIntro } from "@/lib/folio/orb";
+import { WORD, drawWordIntro, makeWordIntro, pickPoints, sampleMask } from "@/lib/folio/particle-text";
 
 const KEY = "folio-splash-seen";
-const SHOW_MS = Math.round(INTRO.total * 1000); // gather, big orb, shrink, settle, then fade
+const SHOW_MS = Math.round(WORD.total * 1000); // particles fly in, form the word, then fade away
 const FADE_MS = 600;
 const BG = "#101116";
 
@@ -72,24 +72,21 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
   );
 }
 
-const GAP = 24; // space between the wordmark and the small orb
+const FONT_FAMILY = '"Bricolage Grotesque", "Nunito Sans", ui-sans-serif, system-ui, sans-serif';
 
 /**
- * Full-screen particle field. Particles stream in from every side and gather into an orb that fills the
- * screen; the orb then shrinks and settles below the "Folio" wordmark, turning the whole time.
+ * Full-screen particle field. Particles stream in from every side of the screen and settle into the word "Folio",
+ * which then turns crisp. The word is drawn on the same canvas the particles were sampled from, so it lines up exactly.
  */
 function ParticleField() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const spacerRef = useRef<HTMLDivElement>(null);
-  const [orbSize] = useState(() =>
-    typeof window === "undefined" ? 220 : Math.round(Math.min(window.innerWidth * 0.54, 236)),
-  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const spacer = spacerRef.current;
     const ctx = canvas?.getContext("2d");
-    if (!canvas || !spacer || !ctx) return;
+    if (!canvas || !ctx) return;
+    let raf = 0;
+    let stopped = false;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -98,40 +95,65 @@ function ParticleField() {
     canvas.height = Math.round(h * dpr);
     ctx.scale(dpr, dpr);
 
-    // The small orb rests exactly in the empty slot under the wordmark.
-    const box = spacer.getBoundingClientRect();
-    const rest = { cx: box.left + box.width / 2, cy: box.top + box.height / 2, r: box.width / 2 };
-    const state = makeIntro(w < 480 ? 1100 : 1500, w, h, rest, reduce);
-
-    const t0 = performance.now();
-    let raf = 0;
-    const frame = (now: number) => {
-      // Schedule the next frame first so one bad frame can never stop the animation.
-      if (!reduce) raf = requestAnimationFrame(frame);
+    (async () => {
+      // Wait (briefly) for the display font, so the particles form the real letter shapes.
       try {
-        drawIntro(ctx, state, (now - t0) / 1000);
+        await Promise.race([document.fonts.load(`800 100px ${FONT_FAMILY}`), new Promise((r) => setTimeout(r, 1200))]);
       } catch {
-        /* skip this frame */
+        /* use the fallback font */
       }
+      if (stopped) return;
+
+      // Size the word so it fills most of the width on a phone, and stays elegant on a big screen.
+      const probe = document.createElement("canvas").getContext("2d");
+      if (!probe) return;
+      probe.font = `800 100px ${FONT_FAMILY}`;
+      const base = probe.measureText("Folio").width || 260;
+      const size = Math.min(Math.max(48, (Math.min(w * 0.74, 620) / base) * 100), 190);
+      const font = `800 ${size}px ${FONT_FAMILY}`;
+      const letterSpacing = -0.045 * size;
+      const word = { text: "Folio", font, letterSpacing, x: w / 2, y: h * 0.5 + size * 0.34 };
+
+      // Draw the word once, read back which pixels are inked: those become the particles' resting places.
+      const mask = document.createElement("canvas");
+      mask.width = Math.round(w);
+      mask.height = Math.round(h);
+      const mctx = mask.getContext("2d", { willReadFrequently: true });
+      if (!mctx) return;
+      mctx.font = font;
+      if ("letterSpacing" in mctx) (mctx as unknown as { letterSpacing: string }).letterSpacing = `${letterSpacing}px`;
+      mctx.textAlign = "center";
+      mctx.textBaseline = "alphabetic";
+      mctx.fillStyle = "#000";
+      mctx.fillText(word.text, word.x, word.y);
+      const pixels = mctx.getImageData(0, 0, mask.width, mask.height).data;
+      const step = w < 480 ? 3 : 2;
+      const targets = pickPoints(sampleMask(pixels, mask.width, mask.height, step), w < 480 ? 1900 : 2800);
+
+      const state = makeWordIntro(targets, w, h, reduce, word);
+      const t0 = performance.now();
+      const frame = (now: number) => {
+        // Schedule the next frame first so one bad frame can never stop the animation.
+        if (!reduce && !stopped) raf = requestAnimationFrame(frame);
+        try {
+          drawWordIntro(ctx as never, state, (now - t0) / 1000);
+        } catch {
+          /* skip this frame */
+        }
+      };
+      raf = requestAnimationFrame(frame);
+    })();
+
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
   }, []);
 
   return (
     <>
-      <canvas
-        ref={canvasRef}
-        aria-hidden="true"
-        className="absolute inset-0 block h-full w-full"
-        style={{ background: "transparent" }}
-      />
-      <div className="relative z-10 flex flex-col items-center" style={{ gap: GAP }}>
-        <h1 className="splash-word font-display text-[clamp(3.4rem,15vw,5.5rem)] leading-none font-extrabold tracking-[-0.045em] text-[#f5f5f8]">
-          Folio
-        </h1>
-        <div ref={spacerRef} style={{ width: orbSize, height: orbSize }} aria-hidden="true" />
-      </div>
+      <h1 className="sr-only">Folio</h1>
+      <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0 block h-full w-full" style={{ background: "transparent" }} />
     </>
   );
 }
