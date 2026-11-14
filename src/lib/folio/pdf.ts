@@ -113,7 +113,7 @@ export async function extractPageText(
     return l;
   };
   for (const raw of content.items) {
-    if (!("str" in raw) || !raw.str) continue;
+    if (!("str" in raw) || !raw.str || !raw.str.trim()) continue; // pdf.js emits blank items that span whole column gaps
     const it = raw as {
       str: string;
       transform: number[];
@@ -588,4 +588,107 @@ export async function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/png");
   });
+}
+
+export type PageImage = { left: number; top: number; width: number; height: number; png: Uint8Array };
+
+/** Pictures drawn on a page, with where they sit (CSS pixels at scale 1, top-left origin) and their pixels as PNG. */
+export async function extractPageImages(page: PdfPageProxy): Promise<PageImage[]> {
+  const pdfjs = (await loadPdfjs()) as unknown as { OPS: Record<string, number> };
+  const OPS = pdfjs.OPS;
+  const vp = page.getViewport({ scale: 1 });
+  let list: { fnArray: number[]; argsArray: unknown[][] };
+  try {
+    list = (await page.getOperatorList()) as never;
+  } catch {
+    return [];
+  }
+  type M = [number, number, number, number, number, number];
+  const mul = (m: M, n: number[]): M => [
+    m[0] * n[0] + m[2] * n[1],
+    m[1] * n[0] + m[3] * n[1],
+    m[0] * n[2] + m[2] * n[3],
+    m[1] * n[2] + m[3] * n[3],
+    m[0] * n[4] + m[2] * n[5] + m[4],
+    m[1] * n[4] + m[3] * n[5] + m[5],
+  ];
+  let ctm: M = [1, 0, 0, 1, 0, 0];
+  const stack: M[] = [];
+  const found: { name: string | null; inline: unknown; box: { left: number; top: number; width: number; height: number } }[] = [];
+  for (let i = 0; i < list.fnArray.length; i++) {
+    const fn = list.fnArray[i];
+    const args = list.argsArray[i] as unknown[];
+    if (fn === OPS.save) stack.push([...ctm] as M);
+    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === OPS.transform) ctm = mul(ctm, args as number[]);
+    else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject) {
+      // The image fills the unit square of the current coordinate system.
+      const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => vp.convertToViewportPoint(ctm[0] * x + ctm[2] * y + ctm[4], ctm[1] * x + ctm[3] * y + ctm[5]));
+      const xs = corners.map((c) => c[0]);
+      const ys = corners.map((c) => c[1]);
+      const box = { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+      if (box.width < 12 || box.height < 12) continue; // bullets, rules and other specks
+      found.push({ name: fn === OPS.paintImageXObject ? String(args[0]) : null, inline: fn === OPS.paintInlineImageXObject ? args[0] : null, box });
+    }
+  }
+  const out: PageImage[] = [];
+  for (const f of found.slice(0, 40)) {
+    try {
+      let obj: unknown = f.inline;
+      if (f.name) {
+        const store = f.name.startsWith("g_") ? page.commonObjs : page.objs;
+        obj = await new Promise<unknown>((resolve) => {
+          const timer = setTimeout(() => resolve(null), 3000);
+          store.get(f.name as string, (o: unknown) => {
+            clearTimeout(timer);
+            resolve(o);
+          });
+        });
+      }
+      const png = await imageObjectToPng(obj as ImageObj | null);
+      if (png) out.push({ ...f.box, png });
+    } catch {
+      /* skip a picture we cannot decode */
+    }
+  }
+  return out;
+}
+
+type ImageObj = { width: number; height: number; kind?: number; data?: Uint8Array | Uint8ClampedArray; bitmap?: ImageBitmap };
+
+async function imageObjectToPng(obj: ImageObj | null): Promise<Uint8Array | null> {
+  if (!obj || !obj.width || !obj.height) return null;
+  // Keep very large pictures to a sensible size for a document.
+  const cap = Math.min(1, 2200 / Math.max(obj.width, obj.height));
+  const src = document.createElement("canvas");
+  src.width = obj.width;
+  src.height = obj.height;
+  const sctx = src.getContext("2d");
+  if (!sctx) return null;
+  if (obj.bitmap) sctx.drawImage(obj.bitmap, 0, 0);
+  else if (obj.data) {
+    const img = sctx.createImageData(obj.width, obj.height);
+    const d = obj.data;
+    const n = obj.width * obj.height;
+    if (obj.kind === 3 || d.length === n * 4) img.data.set(d.subarray(0, n * 4));
+    else if (obj.kind === 2 || d.length === n * 3) for (let i = 0, j = 0; i < n; i++, j += 3) img.data.set([d[j], d[j + 1], d[j + 2], 255], i * 4);
+    else if (obj.kind === 1) {
+      // 1 bit per pixel, rows padded to whole bytes
+      const stride = Math.ceil(obj.width / 8);
+      for (let y = 0; y < obj.height; y++) for (let x = 0; x < obj.width; x++) {
+        const v = d[y * stride + (x >> 3)] & (0x80 >> (x & 7)) ? 255 : 0;
+        img.data.set([v, v, v, 255], (y * obj.width + x) * 4);
+      }
+    } else return null;
+    sctx.putImageData(img, 0, 0);
+  } else return null;
+  let canvas = src;
+  if (cap < 1) {
+    canvas = document.createElement("canvas");
+    canvas.width = Math.round(obj.width * cap);
+    canvas.height = Math.round(obj.height * cap);
+    canvas.getContext("2d")?.drawImage(src, 0, 0, canvas.width, canvas.height);
+  }
+  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/png"));
+  return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
 }

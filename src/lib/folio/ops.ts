@@ -24,6 +24,8 @@ import {
 } from "./office";
 import { fetchHtmlPage, summarizeText, translateText } from "./ai";
 import { drawRuns } from "./fonts";
+import { pdfToDocx } from "./pdf-to-docx";
+import { extractPageText as extractTextItems } from "./pdf";
 import { chunkText } from "./text-utils";
 
 export type JobFile = {
@@ -304,18 +306,18 @@ async function pdfToWord(files: JobFile[], onProgress: ProgressFn): Promise<JobR
   const out: JobResultFile[] = [];
   for (let i = 0; i < files.length; i++) {
     onProgress(((i + 0.2) / files.length) * 100, `Reading ${files[i].name}`);
-    const html = await pdfToHtml(files[i].bytes, files[i].name);
-    const blob = await docxFromHtml(html, stemOf(files[i].name));
-    const previewText = html
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 1600);
-    out.push({ name: `${stemOf(files[i].name)}.docx`, blob, previewText });
+    try {
+      // Real content: headings, paragraphs, tables and pictures, in reading order.
+      const r = await pdfToDocx(files[i].bytes, files[i].name, (pct, label) => onProgress(((i + pct / 100) / files.length) * 100, label));
+      out.push({ name: `${stemOf(files[i].name)}.docx`, blob: r.blob, previewText: r.previewText });
+    } catch {
+      const html = await pdfToHtml(files[i].bytes, files[i].name); // plain-text fallback
+      const blob = await docxFromHtml(html, stemOf(files[i].name));
+      out.push({ name: `${stemOf(files[i].name)}.docx`, blob, previewText: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1600) });
+    }
   }
   return out;
 }
-
 async function pdfToPptx(file: JobFile, onProgress: ProgressFn): Promise<JobResultFile[]> {
   onProgress(8, "Rendering pages");
   const pdf = await openPdfJs(file.bytes);
