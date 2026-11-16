@@ -24,7 +24,7 @@ import {
 } from "./office";
 import { fetchHtmlPage, summarizeText, translateText } from "./ai";
 import { drawRuns } from "./fonts";
-import { pdfToDocx } from "./pdf-to-docx";
+import { pdfPageRows, pdfToDocx } from "./pdf-to-docx";
 import { extractPageText as extractTextItems } from "./pdf";
 import { chunkText } from "./text-utils";
 
@@ -344,19 +344,10 @@ async function pdfToExcel(files: JobFile[], onProgress: ProgressFn): Promise<Job
   const out: JobResultFile[] = [];
   for (let i = 0; i < files.length; i++) {
     onProgress(((i + 0.3) / files.length) * 100, files[i].name);
-    const pdf = await openPdfJs(files[i].bytes);
-    const rows: string[][] = [];
-    for (let p = 1; p <= pdf.numPages; p++) {
-      const page = await pdf.getPage(p);
-      const text = await pagePlainText(page);
-      text.split("\n").forEach((line) => {
-        const cells = line.split(/\s{2,}|\t/).map((c) => c.trim());
-        if (cells.some((c) => c)) rows.push(cells.length < 2 ? [line] : cells);
-      });
-      rows.push([]);
-    }
-    await pdf.cleanup();
-    const blob = await xlsxFromSheets([{ name: "Extract", rows: rows.length ? rows : [["(no table text)"]] }]);
+    // One sheet per page. Rows that line up in columns become real spreadsheet columns; other lines stay in column A.
+    const pages = await pdfPageRows(files[i].bytes);
+    const sheets = pages.map((rows, n) => ({ name: `Page ${n + 1}`, rows: rows.length ? rows : [["(no text on this page)"]] }));
+    const blob = await xlsxFromSheets(sheets.length ? sheets : [{ name: "Extract", rows: [["(no text)"]] }]);
     out.push({ name: `${stemOf(files[i].name)}.xlsx`, blob });
   }
   return out;

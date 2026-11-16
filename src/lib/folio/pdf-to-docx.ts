@@ -95,3 +95,23 @@ export async function pdfToDocx(bytes: ArrayBuffer, name: string, onProgress?: (
   const blob = await D.Packer.toBlob(doc);
   return { blob, previewText: preview.join("\n").slice(0, 1600), images, tables };
 }
+
+/** Text of every page as spreadsheet rows: tables become multi-column rows, other text one cell per line. */
+export async function pdfPageRows(bytes: ArrayBuffer): Promise<string[][][]> {
+  const pdf = await openPdfJs(bytes);
+  const pages: string[][][] = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const vp = page.getViewport({ scale: 1 });
+    const items = await extractPageText(page, vp.width, vp.height, vp.transform);
+    const lines: LineBox[] = groupLines(items).map((l) => ({ text: l.text, left: l.left, top: l.top, width: l.width, height: l.height, fontSize: l.fontSize, bold: l.look?.bold, italic: l.look?.italic, font: l.look?.font }));
+    const rows: string[][] = [];
+    for (const b of buildBlocks(lines, [], vp.width)) {
+      if (b.kind === "table") rows.push(...b.rows);
+      else if (b.kind === "para") rows.push([b.text]);
+    }
+    pages.push(rows);
+  }
+  await pdf.cleanup();
+  return pages;
+}
