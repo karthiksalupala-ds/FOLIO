@@ -197,7 +197,7 @@ export const TOOLS: PdfTool[] = [
   {
     id: "pdf-to-pdfa",
     title: "PDF to PDF/A",
-    blurb: "Create an archival copy that keeps formatting for the long term.",
+    blurb: "Rewrite the PDF as a clean, archive-friendly copy (simple structure, no encryption, standard metadata). Not validated as certified PDF/A.",
     category: "optimize",
     icon: "pdfa",
     tint: "navy",

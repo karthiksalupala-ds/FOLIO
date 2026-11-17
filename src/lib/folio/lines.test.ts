@@ -56,3 +56,9 @@ test("a wide gap inside a row is a column break, a normal space is not", () => {
   assert.equal(groupLines([item("one", 40, 100, 20), item("two", 64, 100, 20)] as never).length, 1);
   assert.equal(groupLines([item("one", 40, 100, 20), item("two", 200, 100, 20)] as never).length, 2);
 });
+
+test("pagesNeedingOcr finds scanned pages inside a mixed document", async () => {
+  const { pagesNeedingOcr } = await import("./text-utils.ts");
+  assert.deepEqual(pagesNeedingOcr(["Annual Report with real text", "   \n ", "Table Q1 120 30", "x"]), [1, 3]);
+  assert.deepEqual(pagesNeedingOcr(["plenty of words here", "and more words here"]), []);
+});

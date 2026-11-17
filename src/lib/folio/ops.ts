@@ -25,8 +25,10 @@ import {
 import { fetchHtmlPage, summarizeText, translateText } from "./ai";
 import { drawRuns } from "./fonts";
 import { pdfPageRows, pdfToDocx } from "./pdf-to-docx";
+import { stripTextInRects } from "./strip-text";
+import { pptxToPdf } from "./pptx-to-pdf";
 import { extractPageText as extractTextItems } from "./pdf";
-import { chunkText } from "./text-utils";
+import { chunkText, pagesNeedingOcr } from "./text-utils";
 
 export type JobFile = {
   id: string;
@@ -264,7 +266,10 @@ async function compressOp(files: JobFile[], options: JobOptions, onProgress: Pro
     // Never hand back a file that is bigger than the input.
     const candidates: Uint8Array[] = [new Uint8Array(original), raster];
     if (lossless) candidates.push(lossless);
-    const best = candidates.reduce((a, b) => (b.byteLength < a.byteLength ? b : a));
+    // Re-rendering turns real text into pictures, so only do it when it saves a lot (a quarter or more).
+    const lossless2 = lossless ?? new Uint8Array(original);
+    const smallestKeepingText = [new Uint8Array(original), lossless2].reduce((a, b) => (b.byteLength < a.byteLength ? b : a));
+    const best = raster.byteLength < smallestKeepingText.byteLength * 0.75 ? raster : smallestKeepingText;
     out.push(pdfResult(`${stemOf(files[f].name)}-compressed.pdf`, best));
   }
   return out;
@@ -409,7 +414,13 @@ async function officeToPdf(
   const out: JobResultFile[] = [];
   for (let i = 0; i < files.length; i++) {
     onProgress(((i + 0.2) / files.length) * 100, files[i].name);
-    const bytes = await fileToPdfBytes(files[i], kind);
+    let bytes: Uint8Array | ArrayBuffer;
+    try {
+      // PowerPoint: real slides as real pages (live text, pictures and shapes). Other formats use the page renderer.
+      bytes = kind === "ppt" ? await pptxToPdf(files[i].bytes) : await fileToPdfBytes(files[i], kind);
+    } catch {
+      bytes = await fileToPdfBytes(files[i], kind);
+    }
     out.push(pdfResult(`${stemOf(files[i].name)}.pdf`, bytes));
   }
   return out;
@@ -591,6 +602,7 @@ async function redactOp(file: JobFile, options: JobOptions, onProgress: Progress
   const js = await openPdfJs(srcBytes);
   const needle = query.toLowerCase();
   let hits = 0;
+  let needsFlatten = false;
   for (let i = 1; i <= js.numPages; i++) {
     const page = await js.getPage(i);
     const vp = page.getViewport({ scale: 1 });
@@ -598,33 +610,46 @@ async function redactOp(file: JobFile, options: JobOptions, onProgress: Progress
     const libPage = pdf.getPages()[i - 1];
     if (!libPage) continue;
     const { width, height } = libPage.getSize();
+    const rects: { x: number; y: number; w: number; h: number }[] = [];
     for (const it of items) {
       const hay = it.str.toLowerCase();
       let from = 0;
       for (let idx = hay.indexOf(needle, from); idx !== -1; idx = hay.indexOf(needle, from)) {
         from = idx + needle.length;
-        hits += 1;
-        // Box only the matched part of this text run.
-        const x0 = it.nx + (it.nw * idx) / hay.length;
-        const w = (it.nw * needle.length) / hay.length;
-        const pad = 1.5;
+        // The whole text run containing the match is removed from the page, so the black box covers the whole run
+        // (otherwise the rest of the line would vanish without a trace).
+        rects.push({ x: it.nx, y: it.ny, w: it.nw, h: it.nh });
+        break;
+      }
+    }
+    if (rects.length) {
+      hits += rects.length;
+      // Take the words out of the page's content first, so they are really gone (not just covered)...
+      const removed = stripTextInRects(libPage, rects);
+      if (removed === 0) needsFlatten = true; // text we couldn't edit in place (e.g. inside a picture)
+      // ...then draw the black boxes.
+      const pad = 1.5;
+      for (const r of rects)
         libPage.drawRectangle({
-          x: x0 * width - pad,
-          y: height - (it.ny + it.nh) * height - pad,
-          width: Math.max(w * width, 4) + pad * 2,
-          height: Math.max(it.nh * height, 6) + pad * 2,
+          x: r.x * width - pad,
+          y: height - (r.y + r.h) * height - pad,
+          width: Math.max(r.w * width, 4) + pad * 2,
+          height: Math.max(r.h * height, 6) + pad * 2,
           color: rgb(0, 0, 0),
         });
-      }
     }
     onProgress(10 + (50 * i) / js.numPages, `Page ${i}`);
   }
   await js.cleanup();
   if (!hits) throw new Error(`No matches for \u201c${query}\u201d`);
-  // Drawing a black box leaves the original text underneath (still selectable / extractable).
-  // Flatten every page to an image so the redacted words are really gone.
-  onProgress(62, "Flattening pages so the text is removed");
   const marked = await pdf.save();
+  if (!needsFlatten) {
+    // Everything was removed in place: the rest of the document keeps its real, selectable text.
+    onProgress(95, `Redacted ${hits} match${hits === 1 ? "" : "es"}`);
+    return [pdfResult(`${stemOf(file.name)}-redacted.pdf`, marked)];
+  }
+  // Fallback: some text could not be removed in place, so flatten the pages to images.
+  onProgress(62, "Flattening pages so the text is removed");
   const flat = await rasterizeToPdf(asArrayBuffer(marked), 2, 0.9, (p, label) => onProgress(62 + p * 0.3, label));
   onProgress(95, `Redacted ${hits} match${hits === 1 ? "" : "es"}`);
   return [pdfResult(`${stemOf(file.name)}-redacted.pdf`, flat)];
@@ -738,85 +763,65 @@ async function compareOp(files: JobFile[], onProgress: ProgressFn): Promise<JobR
 }
 
 async function ocrOp(file: JobFile, onProgress: ProgressFn): Promise<JobResultFile[]> {
-  onProgress(10, "Reading text layer");
-  const text = await extractPdfText(file.bytes, (p, l) => onProgress(p * 0.3, l));
-  if (text.replace(/\s/g, "").length >= 12) {
-    // Already has a text layer: export the text and a clean, searchable rebuild.
-    const html = text
-      .split(/\n{2,}/)
-      .map((p) => `<p>${escapeHtml(p)}</p>`)
-      .join("");
-    const pdfBytes = await htmlToPdfBytes(`<h1>${escapeHtml(stemOf(file.name))}</h1>${html}`);
+  onProgress(5, "Reading text layer");
+  const js = await openPdfJs(file.bytes);
+  const texts: string[] = [];
+  for (let i = 1; i <= js.numPages; i++) texts.push(await pagePlainText(await js.getPage(i)));
+  const scanned = pagesNeedingOcr(texts);
+  if (!scanned.length) {
+    // Every page already has real text: nothing to recognise. The PDF itself is the searchable file.
+    await js.cleanup();
+    const text = texts.join("\n\n").trim();
     return [
-      {
-        name: `${stemOf(file.name)}.txt`,
-        blob: new Blob([text], { type: "text/plain" }),
-        previewText: text.slice(0, 1600),
-      },
-      pdfResult(`${stemOf(file.name)}-searchable.pdf`, pdfBytes),
+      { name: `${stemOf(file.name)}.txt`, blob: new Blob([text], { type: "text/plain" }), previewText: text.slice(0, 1600) },
+      pdfResult(`${stemOf(file.name)}-searchable.pdf`, new Uint8Array(file.bytes)),
     ];
   }
-  return scannedOcr(file, onProgress);
-}
-
-type OcrWord = { text: string; x0: number; y0: number; x1: number; y1: number };
-
-/** Scanned PDF: render each page, run Tesseract (English), keep the page image and add an invisible text layer. */
-async function scannedOcr(file: JobFile, onProgress: ProgressFn): Promise<JobResultFile[]> {
-  onProgress(30, "Loading OCR engine");
+  onProgress(15, `Loading OCR engine (${scanned.length} scanned page${scanned.length === 1 ? "" : "s"})`);
   const { createWorker } = await import("tesseract.js");
   const worker = await createWorker("eng");
-  const js = await openPdfJs(file.bytes);
-  const scale = 2;
-  const out = await PDFDocument.create();
+  // Pages that already have text stay exactly as they are; only the scanned pages are replaced.
+  const out = await PDFDocument.load(file.bytes, { ignoreEncryption: true });
   const font = await out.embedFont(StandardFonts.Helvetica);
-  const pageTexts: string[] = [];
+  const scale = 2;
   try {
-    for (let i = 1; i <= js.numPages; i++) {
-      onProgress(30 + ((i - 1) / js.numPages) * 65, `Recognising page ${i} of ${js.numPages}`);
-      const page = await js.getPage(i);
+    for (let n = 0; n < scanned.length; n++) {
+      const idx = scanned[n];
+      onProgress(15 + (n / scanned.length) * 80, `Recognising page ${idx + 1} (${n + 1} of ${scanned.length})`);
+      const page = await js.getPage(idx + 1);
       const canvas = document.createElement("canvas");
       await renderPageToCanvas(page, canvas, scale, 0, 1);
       const { data } = await worker.recognize(canvas, {}, { blocks: true });
-      const jpg = await canvasToJpeg(canvas, 0.85);
-      const img = await out.embedJpg(new Uint8Array(await jpg.arrayBuffer()));
+      const img = await out.embedJpg(new Uint8Array(await (await canvasToJpeg(canvas, 0.85)).arrayBuffer()));
       const pw = canvas.width / scale;
       const ph = canvas.height / scale;
-      const outPage = out.addPage([pw, ph]);
-      outPage.drawImage(img, { x: 0, y: 0, width: pw, height: ph });
-      const words: OcrWord[] = [];
+      const fresh = out.insertPage(idx, [pw, ph]);
+      out.removePage(idx + 1);
+      fresh.drawImage(img, { x: 0, y: 0, width: pw, height: ph });
+      const lines: string[] = [];
       for (const block of data.blocks ?? [])
         for (const para of block.paragraphs)
-          for (const line of para.lines)
-            for (const w of line.words)
-              words.push({ text: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 });
-      for (const w of words) {
-        const t = w.text.replace(/[^\x20-\x7e]/g, "");
-        if (!t.trim()) continue;
-        const h = Math.max((w.y1 - w.y0) / scale, 4);
-        outPage.drawText(t, {
-          x: w.x0 / scale,
-          y: ph - w.y1 / scale,
-          size: h * 0.85,
-          font,
-          opacity: 0, // invisible text layer: selectable and searchable, image stays on top
-        });
-      }
-      pageTexts.push(data.text ?? words.map((w) => w.text).join(" "));
+          for (const line of para.lines) {
+            lines.push(line.words.map((w) => w.text).join(" "));
+            for (const w of line.words) {
+              const t = w.text.replace(/[^\x20-\x7e]/g, "");
+              if (!t.trim()) continue;
+              const h = Math.max((w.bbox.y1 - w.bbox.y0) / scale, 4);
+              // invisible text layer: selectable and searchable while the scan stays on top
+              fresh.drawText(t, { x: w.bbox.x0 / scale, y: ph - w.bbox.y1 / scale, size: h * 0.85, font, opacity: 0 });
+            }
+          }
+      texts[idx] = (data.text ?? lines.join("\n")).trim();
     }
   } finally {
     await worker.terminate();
     await js.cleanup();
   }
-  const all = pageTexts.join("\n\n").trim();
-  if (all.replace(/\s/g, "").length < 4) throw new Error("OCR could not find readable text in this scan.");
+  const all = texts.map((t, i) => `--- Page ${i + 1} ---\n${t}`).join("\n\n");
+  if (scanned.every((i) => texts[i].replace(/\s/g, "").length < 4)) throw new Error("OCR could not find readable text in the scanned pages.");
   onProgress(97, "Saving");
   return [
-    {
-      name: `${stemOf(file.name)}.txt`,
-      blob: new Blob([all], { type: "text/plain" }),
-      previewText: all.slice(0, 1600),
-    },
+    { name: `${stemOf(file.name)}.txt`, blob: new Blob([all], { type: "text/plain" }), previewText: all.slice(0, 1600) },
     pdfResult(`${stemOf(file.name)}-ocr.pdf`, await out.save()),
   ];
 }

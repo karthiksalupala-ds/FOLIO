@@ -108,3 +108,12 @@ export function chunkText(text: string, max = 9000): string[] {
   push();
   return chunks;
 }
+
+/** Zero-based indexes of pages whose text layer is (nearly) empty: scans, photos, drawings. */
+export function pagesNeedingOcr(pageTexts: string[], minChars = 12): number[] {
+  const out: number[] = [];
+  pageTexts.forEach((t, i) => {
+    if (t.replace(/\s/g, "").length < minChars) out.push(i);
+  });
+  return out;
+}
