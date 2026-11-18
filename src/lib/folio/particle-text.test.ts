@@ -62,7 +62,7 @@ const screens: [number, number][] = [
   [820, 1180],
   [1440, 900],
 ];
-const word = (w: number, h: number) => ({ text: "Folio", font: "800 100px sans-serif", letterSpacing: -4, x: w / 2, y: h / 2 });
+const word = (w: number, h: number) => ({ text: "Folio", accent: "#e5322d", font: "800 100px sans-serif", letterSpacing: -4, x0: w / 2 - 100, accentX: w / 2 + 40, y: h / 2 });
 
 function targetsFor(w: number, h: number, n: number) {
   const { data, w: bw, h: bh } = block();
@@ -102,7 +102,7 @@ test("the crisp word fades in at the end and the particles fade away", () => {
   assert.equal(before.texts, 0, "no word yet");
   const after = fakeCtx();
   drawWordIntro(after, st, WORD.total);
-  assert.equal(after.texts, 1, "word is drawn");
+  assert.equal(after.texts, 2, "word is drawn in two colours: Foli + the accent letter");
 });
 
 test("reduced motion shows the finished word straight away", () => {
@@ -110,5 +110,20 @@ test("reduced motion shows the finished word straight away", () => {
   const st = makeWordIntro(targetsFor(w, h, 800), w, h, true, word(w, h));
   const c = fakeCtx();
   drawWordIntro(c, st, 0);
-  assert.equal(c.texts, 1);
+  assert.equal(c.texts, 2);
+});
+
+test("the last letter's particles settle in the brand colour, the rest warm white", () => {
+  const [w, h] = [390, 844];
+  const targets = [{ x: w / 2 - 80, y: h / 2 }, { x: w / 2 + 60, y: h / 2 }];
+  const st = makeWordIntro(targets, w, h, false, word(w, h));
+  const [r0, g0, b0] = st.seeds[0].rest;
+  const [r1, g1, b1] = st.seeds[1].rest;
+  assert.ok(g0 > 200 && b0 > 150, `left letters are warm white (${r0},${g0},${b0})`);
+  assert.ok(g1 < 160 && b1 < 100, `accent letter stays red/orange (${r1},${g1},${b1})`);
+});
+
+test("flying particles are red, orange or gold sparks", () => {
+  const st = makeWordIntro(targetsFor(390, 844, 300), 390, 844, false, word(390, 844));
+  for (const s of st.seeds) assert.ok(s.fly[0] >= 225 && s.fly[1] <= 200 && s.fly[2] <= 75, `${s.fly}`);
 });

@@ -38,11 +38,19 @@ export const WORD = {
   total: 4.4,
 };
 
-export type WordLook = { text: string; font: string; letterSpacing: number; x: number; y: number };
+/** The word as drawn: `x0` is its left edge, `accentX` is where the last letter (drawn in the brand colour) starts. */
+export type WordLook = { text: string; accent: string; font: string; letterSpacing: number; x0: number; accentX: number; y: number };
+
+type RGB = [number, number, number];
+const FLY: RGB[] = [[229, 50, 45], [255, 120, 40], [255, 196, 70]]; // red, orange, gold sparks
+const WARM_WHITE: RGB = [255, 238, 220];
+const ACCENT_REST: RGB = [240, 70, 55];
+const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const spark = (t: number): RGB => (t < 0.5 ? mix(FLY[0], FLY[1], t * 2) : mix(FLY[1], FLY[2], (t - 0.5) * 2));
 
 export type WordState = {
   targets: Pt[];
-  seeds: { sx: number; sy: number; delay: number; swirl: number; phase: number }[];
+  seeds: { sx: number; sy: number; delay: number; swirl: number; phase: number; fly: RGB; rest: RGB }[];
   w: number;
   h: number;
   reach: number;
@@ -62,6 +70,10 @@ export function makeWordIntro(targets: Pt[], w: number, h: number, reduce: boole
       delay: frac(Math.sin(i * 78.233) * 12345.6789) * WORD.delayMax,
       swirl: frac(Math.sin(i * 5.123) * 9871.321) * 2 - 1,
       phase: frac(Math.sin(i * 3.917) * 4375.123) * Math.PI * 2,
+      // each particle starts as a red / orange / gold spark...
+      fly: spark(frac(Math.sin(i * 9.173) * 6421.77)),
+      // ...and settles warm white, except the last letter which stays in the brand colour
+      rest: targets[i].x >= word.accentX ? mix(ACCENT_REST, FLY[1], frac(Math.sin(i * 2.71) * 811.3) * 0.5) : mix(WARM_WHITE, FLY[2], frac(Math.sin(i * 4.31) * 933.1) * 0.35),
     };
   });
   return { targets, seeds, w, h, reach, reduce, word };
@@ -105,10 +117,12 @@ export function drawWordIntro(ctx: WordContext, st: WordState, tSeconds: number)
     if (!(x > -6 && x < st.w + 6 && y > -6 && y < st.h + 6)) continue;
     const a = (0.3 + 0.7 * k) * (1 - 0.9 * textA);
     if (a <= 0.01) continue;
-    // red while flying, warm white once settled
-    const r = Math.round(229 + 26 * k);
-    const g = Math.round(50 + 190 * k * k);
-    const b = Math.round(45 + 195 * k * k);
+    // spark colours while flying, settled colour once in place (with a little twinkle)
+    const c = mix(s.fly, s.rest, k * k);
+    const twinkle = k >= 1 && !st.reduce ? 0.18 * Math.max(0, Math.sin(t * 4 + s.phase * 3)) : 0;
+    const r = Math.round(Math.min(255, c[0] + 40 * twinkle));
+    const g = Math.round(Math.min(255, c[1] + 60 * twinkle));
+    const b = Math.round(Math.min(255, c[2] + 60 * twinkle));
     ctx.fillStyle = `rgba(${r},${g},${b},${a.toFixed(3)})`;
     ctx.beginPath();
     ctx.arc(x, y, 0.9 + 0.8 * k, 0, Math.PI * 2);
@@ -122,10 +136,12 @@ export function drawWordIntro(ctx: WordContext, st: WordState, tSeconds: number)
     ctx.globalAlpha = textA;
     ctx.font = st.word.font;
     if ("letterSpacing" in ctx) ctx.letterSpacing = `${st.word.letterSpacing}px`;
-    ctx.textAlign = "center";
+    ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "#f5f5f8";
-    ctx.fillText(st.word.text, st.word.x, st.word.y);
+    ctx.fillText(st.word.text.slice(0, -1), st.word.x0, st.word.y);
+    ctx.fillStyle = st.word.accent;
+    ctx.fillText(st.word.text.slice(-1), st.word.accentX, st.word.y);
     ctx.globalAlpha = 1;
   }
   return drawn;

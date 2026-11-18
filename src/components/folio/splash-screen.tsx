@@ -112,7 +112,15 @@ function ParticleField() {
       const size = Math.min(Math.max(48, (Math.min(w * 0.74, 620) / base) * 100), 190);
       const font = `800 ${size}px ${FONT_FAMILY}`;
       const letterSpacing = -0.045 * size;
-      const word = { text: "Folio", font, letterSpacing, x: w / 2, y: h * 0.5 + size * 0.34 };
+      const letterSpacingPx = letterSpacing;
+      const probe2 = document.createElement("canvas").getContext("2d");
+      if (!probe2) return;
+      probe2.font = font;
+      if ("letterSpacing" in probe2) (probe2 as unknown as { letterSpacing: string }).letterSpacing = `${letterSpacingPx}px`;
+      const wholeW = probe2.measureText("Folio").width;
+      const lastW = probe2.measureText("Foli").width;
+      const x0 = w / 2 - wholeW / 2;
+      const word = { text: "Folio", accent: "#e5322d", font, letterSpacing: letterSpacingPx, x0, accentX: x0 + lastW, y: h * 0.5 + size * 0.34 };
 
       // Draw the word once, read back which pixels are inked: those become the particles' resting places.
       const mask = document.createElement("canvas");
@@ -122,10 +130,10 @@ function ParticleField() {
       if (!mctx) return;
       mctx.font = font;
       if ("letterSpacing" in mctx) (mctx as unknown as { letterSpacing: string }).letterSpacing = `${letterSpacing}px`;
-      mctx.textAlign = "center";
+      mctx.textAlign = "left";
       mctx.textBaseline = "alphabetic";
       mctx.fillStyle = "#000";
-      mctx.fillText(word.text, word.x, word.y);
+      mctx.fillText(word.text, word.x0, word.y);
       const pixels = mctx.getImageData(0, 0, mask.width, mask.height).data;
       const step = w < 480 ? 3 : 2;
       const targets = pickPoints(sampleMask(pixels, mask.width, mask.height, step), w < 480 ? 1900 : 2800);
