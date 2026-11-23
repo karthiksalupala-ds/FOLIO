@@ -68,7 +68,7 @@ Also built in: **find in page**, page tools (rotate, duplicate, insert blank, de
 
 ## Privacy
 
-Documents are processed in your browser and stored locally. The two AI tools (Summarizer, Translate) send the extracted text to the server, which calls the xAI API. Nothing else leaves your device.
+Documents are processed in your browser and stored locally. The two AI tools (Summarizer, Translate) send the extracted text to the server which calls the xAI API. Nothing else leaves your device.
 
 ## Getting started
 
@@ -130,7 +130,7 @@ Planned work to bring the editing experience closer to desktop PDF editors:
 - [ ] Comments and review mode
 - [ ] Interactive form fields: checkbox, radio, dropdown, signature field
 - [ ] Hyperlinks and bookmarks
-- [ ] More OCR languages (Telugu, Hindi)
+- [ ] More OCR languages (Telugu, Hindi    )
 
 ## Contributing
 
