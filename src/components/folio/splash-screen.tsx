@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FolioBadge } from "@/components/folio/mark";
 import { WORD, drawWordIntro, makeWordIntro, pickPoints, sampleMask } from "@/lib/folio/particle-text";
 
 const KEY = "folio-splash-seen";
@@ -80,6 +81,7 @@ const FONT_FAMILY = '"Bricolage Grotesque", "Nunito Sans", ui-sans-serif, system
  */
 function ParticleField() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [badge, setBadge] = useState<{ top: number; size: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -138,6 +140,9 @@ function ParticleField() {
       const step = w < 480 ? 3 : 2;
       const targets = pickPoints(sampleMask(pixels, mask.width, mask.height, step), w < 480 ? 1900 : 2800);
 
+      // The logo settles just above the word, as the crisp word fades in.
+      const markSize = Math.round(Math.min(96, Math.max(56, size * 0.62)));
+      setBadge({ top: Math.max(24, word.y - size * 0.78 - markSize - 22), size: markSize });
       const state = makeWordIntro(targets, w, h, reduce, word);
       const t0 = performance.now();
       const frame = (now: number) => {
@@ -162,6 +167,11 @@ function ParticleField() {
     <>
       <h1 className="sr-only">Folio</h1>
       <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0 block h-full w-full" style={{ background: "transparent" }} />
+      {badge && (
+        <div className="splash-badge pointer-events-none absolute left-1/2" style={{ top: badge.top, ["--badge" as string]: `${badge.size}px` }}>
+          <FolioBadge className="block" />
+        </div>
+      )}
     </>
   );
 }

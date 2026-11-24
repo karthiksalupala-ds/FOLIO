@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
-import { FolioMark } from "@/components/folio/mark";
+import { FolioBadge } from "@/components/folio/mark";
 import { ToolGlyph } from "@/components/folio/tool-icons";
 import { CATEGORIES, TOOLS, toolsIn, type CategoryId, type ToolId } from "@/lib/folio/catalog";
 import {
@@ -12,9 +12,7 @@ import {
 export function FolioLogo({ compact = false }: { compact?: boolean }) {
   return (
     <Link to="/" className="inline-flex items-center gap-2 text-fg">
-      <span className="grid size-8 place-items-center rounded-md bg-accent text-accent-fg">
-        <FolioMark className="size-4" />
-      </span>
+      <FolioBadge className="size-8" />
       {!compact && (
         <span className="text-[1.2rem] font-extrabold tracking-tight">
           Folio<span className="text-accent">PDF</span>
@@ -111,9 +109,7 @@ export function SiteFooter() {
       <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-10 md:grid-cols-4 md:px-8">
         <div className="md:col-span-2">
           <span className="inline-flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-md bg-accent text-accent-fg">
-              <FolioMark className="size-4" />
-            </span>
+            <FolioBadge className="size-8" />
             <span className="text-[1.2rem] font-extrabold tracking-tight">
               Folio<span className="text-accent">PDF</span>
             </span>
